@@ -148,19 +148,31 @@ export function AksanticMark({
   );
 }
 
-/** La marque avec son nom, telle qu'elle apparaît sur le logo. */
+/**
+ * La marque complète.
+ *
+ * Le logo dit AKSANTIC en géométrique lourd, puis TECHNOLOGY en lettres
+ * espacées, en orchidée. On respecte ça : ce sont deux mots, deux poids,
+ * deux couleurs — pas un mot avec une rallonge.
+ */
 export function AksanticLogo({
-  size = 36, clair = false, sousTitre = true,
-}: { size?: number; clair?: boolean; sousTitre?: boolean }) {
+  size = 36, clair = false, sousTitre = true, anime = true,
+}: { size?: number; clair?: boolean; sousTitre?: boolean; anime?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <AksanticMark size={size} clair={clair} />
+      <AksanticMark size={size} clair={clair} anime={anime} />
       <div className="leading-none">
-        <p className={`text-lg font-bold tracking-tight ${clair ? "text-white" : "text-navy-900"}`}>
+        <p
+          className={`font-display font-extrabold tracking-tight ${clair ? "text-white" : "text-navy-900"}`}
+          style={{ fontSize: size * 0.46 }}
+        >
           AKSANTIC
         </p>
         {sousTitre && (
-          <p className={`mt-0.5 text-[9px] font-medium tracking-[0.3em] ${clair ? "text-ciel-300" : "text-acier"}`}>
+          <p
+            className="mt-1 font-display font-bold text-orchidee"
+            style={{ fontSize: size * 0.19, letterSpacing: size * 0.055 }}
+          >
             TECHNOLOGY
           </p>
         )}

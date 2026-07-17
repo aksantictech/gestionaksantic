@@ -3,10 +3,53 @@
 @tailwind utilities;
 
 :root { color-scheme: light; }
-body { @apply bg-ciel-50 text-navy-900 antialiased; }
 
-/* Le clavier doit rester utilisable : l'anneau de focus ne se négocie pas. */
-:focus-visible { @apply outline-none ring-2 ring-acier ring-offset-2 ring-offset-white; }
+body {
+  @apply bg-ciel-50 text-navy-900 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Les montants s'alignent à la virgule, toujours. Sinon on ne compare rien. */
+.chiffre { @apply font-mono tabular-nums; font-variant-numeric: tabular-nums; }
+
+/* L'anneau de focus ne se négocie pas : c'est le seul repère au clavier. */
+:focus-visible { @apply outline-none ring-2 ring-orchidee ring-offset-2 ring-offset-white; }
+
+/* Les hexagones détachés de la marque : une dérive lente, presque imperceptible. */
+@keyframes flotte {
+  0%, 100% { transform: translate(0, 0); opacity: 0.45; }
+  50%      { transform: translate(1.5px, -3.5px); opacity: 0.9; }
+}
+.hex-flotte {
+  animation-name: flotte;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Entrée du formulaire. Une fois, discrètement, puis on n'y pense plus. */
+@keyframes monte {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.monte { animation: monte 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.monte-2 { animation-delay: 0.08s; }
+
+/* Halo respirant derrière la sphère. Très lent : on doit le sentir, pas le voir. */
+@keyframes respire {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 0.8; transform: scale(1.06); }
+}
+.respire { animation: respire 7s ease-in-out infinite; }
+
+.champ {
+  @apply w-full rounded-lg border border-ciel-100 bg-ciel-50 px-3.5 py-2.5 text-sm text-navy-900
+         placeholder-ciel-300 transition-colors;
+}
+.champ:focus {
+  @apply border-orchidee bg-white outline-none ring-2 ring-orchidee/20;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

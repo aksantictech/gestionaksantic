@@ -21,6 +21,14 @@ comptes créés par un administrateur avec de vraies adresses email.
 
 **SQL Editor** → **New query** → coller tout `supabase/schema.sql` → **Run**.
 
+Puis, dans une nouvelle requête, coller `supabase/migration-002.sql` → **Run**.
+Elle ajoute : PDF des contrats, responsables et échéance des projets, matricule
+généré automatiquement, description de poste, module Lettres, et le bucket de
+fichiers.
+
+> Si votre base tourne déjà, ne rejouez **que** `migration-002.sql`. Elle est
+> additive et ne touche à aucune donnée existante.
+
 ### 3. Créer le premier administrateur
 
 **Authentication → Users → Add user**
@@ -100,6 +108,9 @@ l'API directement se ferait refuser par la base.
 - Équipe et masse salariale
 - Projets
 - Registre : un fil chronologique unique de tout ce qui bouge
+- Synthèse : indicateurs, six derniers mois, principaux clients, postes de dépense, délai moyen d'encaissement
+- Lettres transmises et reçues, avec accusé de réception et suivi des relances
+- Fichiers (contrats, lettres, accusés) dans un bucket **privé**, accès par lien signé
 
 ## Ce qui n'y est pas — assumé
 
@@ -108,6 +119,7 @@ l'API directement se ferait refuser par la base.
 | TVA, facture normalisée, DEF/e-DEF | Écarté à votre demande | Après clarification du régime avec la DGI |
 | Comptabilité SYSCOHADA | Hors périmètre | Grande version |
 | Génération PDF des factures | Non tenable dans le délai | **Prochain ajout le plus rentable** |
+| Recherche plein texte dans les lettres | — | Grande version |
 | Multi-société | Une seule société pour l'instant | Le CDC prévoit `org_id` partout |
 | Journal d'audit | — | Grande version |
 | Réinitialisation de mot de passe par email | Demande un SMTP configuré | Un admin le change depuis l'onglet Admin |

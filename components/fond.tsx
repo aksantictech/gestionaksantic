@@ -24,14 +24,20 @@ export function FondNavy() {
     <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
       <defs>
         <TrameHex id="trame-navy" couleur="#74A0C9" opacite={0.22} />
-        <radialGradient id="halo" cx="30%" cy="35%" r="75%">
-          <stop offset="0%" stopColor="#4079B2" stopOpacity="0.55" />
-          <stop offset="55%" stopColor="#03357E" stopOpacity="0.15" />
-          <stop offset="100%" stopColor="#03357E" stopOpacity="0" />
+        <radialGradient id="halo" cx="50%" cy="45%" r="70%">
+          <stop offset="0%" stopColor="#4079B2" stopOpacity="0.5" />
+          <stop offset="60%" stopColor="#03357E" stopOpacity="0.1" />
+          <stop offset="100%" stopColor="#02224F" stopOpacity="0.35" />
+        </radialGradient>
+        {/* Une pointe d'orchidée en bas à droite. Le violet du logo, à dose homéopathique. */}
+        <radialGradient id="orchidee-coin" cx="88%" cy="92%" r="45%">
+          <stop offset="0%" stopColor="#C38CD4" stopOpacity="0.20" />
+          <stop offset="100%" stopColor="#C38CD4" stopOpacity="0" />
         </radialGradient>
       </defs>
       <rect width="100%" height="100%" fill="url(#trame-navy)" />
       <rect width="100%" height="100%" fill="url(#halo)" />
+      <rect width="100%" height="100%" fill="url(#orchidee-coin)" />
     </svg>
   );
 }

@@ -13,17 +13,20 @@ const TONES = {
   muted: "bg-ciel-50 text-acier ring-ciel-100",
 } as const;
 
+/* Vert, ambre, rouge : ces trois-là restent. L'argent a un code couleur que
+   personne n'a envie de réapprendre pour faire joli. L'orchidée sert ailleurs. */
+
 export function Tag({ tone = "muted", children }: { tone?: keyof typeof TONES; children: React.ReactNode }) {
   return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ring-1 ${TONES[tone]}`}>
+    <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ring-1 ${TONES[tone]}`}>
       {children}
     </span>
   );
 }
 
 const VARIANTS = {
-  primary: "bg-navy-900 text-white hover:bg-navy-700 font-medium",
-  ghost: "border border-ciel-300 text-navy-900 hover:bg-ciel-50",
+  primary: "bg-navy-900 text-white font-semibold shadow-carte hover:bg-navy-700 hover:shadow-leve",
+  ghost: "border border-ciel-100 bg-white text-navy-900 hover:border-ciel-300 hover:bg-ciel-50",
   danger: "text-red-600 hover:bg-red-50",
 } as const;
 
@@ -36,15 +39,15 @@ export function Btn({
   return (
     <button
       type={type} onClick={onClick} disabled={disabled} title={title}
-      className={`inline-flex items-center gap-2 rounded px-3 py-2 text-sm transition-colors disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm transition-all disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
     >
       {children}
     </button>
   );
 }
 
-export const inputCls =
-  "w-full rounded border border-ciel-300 bg-white px-3 py-2 text-sm text-navy-900 placeholder-ciel-300 focus:border-acier focus:outline-none focus:ring-1 focus:ring-acier disabled:bg-ciel-50 disabled:text-acier";
+/** Un seul style de champ dans toute l'application. Défini une fois, dans globals.css. */
+export const inputCls = "champ disabled:cursor-not-allowed disabled:text-acier disabled:opacity-70";
 
 export const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => (
   <input {...p} className={`${inputCls} ${p.className || ""}`} />
@@ -57,9 +60,9 @@ export const Select = (p: React.SelectHTMLAttributes<HTMLSelectElement>) => (
 export function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-acier">{label}</span>
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-acier">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-ciel-300">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-xs leading-snug text-ciel-300">{hint}</span>}
     </label>
   );
 }
@@ -74,10 +77,10 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-900/40 p-4 backdrop-blur-sm sm:p-8">
-      <div className={`w-full rounded-lg bg-white shadow-xl ring-1 ring-ciel-100 ${wide ? "max-w-3xl" : "max-w-lg"}`}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy-950/50 p-4 backdrop-blur-sm sm:p-8">
+      <div className={`monte w-full rounded-xl bg-white shadow-2xl ring-1 ring-ciel-100 ${wide ? "max-w-3xl" : "max-w-lg"}`}>
         <div className="flex items-center justify-between border-b border-ciel-100 px-5 py-4">
-          <h3 className="font-semibold">{title}</h3>
+          <h3 className="font-display font-bold tracking-tight">{title}</h3>
           <button onClick={onClose} aria-label="Fermer" className="rounded p-1 text-acier hover:bg-ciel-50">
             <X size={18} />
           </button>
@@ -92,8 +95,8 @@ export function Empty({
   icon: Icon, titre, action,
 }: { icon: React.ComponentType<{ size?: number; className?: string }>; titre: string; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-ciel-300 bg-white py-16 text-center">
-      <Icon size={28} className="text-ciel-300" />
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-ciel-200 bg-white/70 py-16 text-center">
+      <Icon size={28} className="text-ciel-200" />
       <p className="text-sm text-acier">{titre}</p>
       {action}
     </div>
@@ -104,8 +107,8 @@ export function Empty({
 export function Money({ cdf, size = "base", tone = "" }: { cdf: number; size?: "sm" | "base" | "xl"; tone?: string }) {
   const cls = { sm: "text-sm", base: "text-base", xl: "text-2xl" }[size];
   return (
-    <span className={`font-mono tabular-nums ${cls} ${tone}`}>
-      {fmt(cdf)} <span className="text-xs text-acier">FC</span>
+    <span className={`chiffre ${cls} ${tone}`}>
+      {fmt(cdf)} <span className="text-xs font-normal text-ciel-300">FC</span>
     </span>
   );
 }

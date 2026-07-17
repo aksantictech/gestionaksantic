@@ -5,18 +5,23 @@ import { useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, FileText, Wallet, UserCog, ScrollText, Boxes,
   Settings, ShieldCheck, Plus, Search, X, Trash2, Pencil, Check, LogOut,
-  ArrowDownRight, ArrowUpRight, AlertTriangle, Building2,
+  ArrowDownRight, ArrowUpRight, AlertTriangle, Building2, Mail, PieChart, ExternalLink,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import {
   toCdf, fmt, dateFr, today, totalFacture, payeCdf, resteCdf, etatFacture, SOCIETE,
 } from "@/lib/money";
 import type {
-  Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet, Devise, Role,
+  Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet,
+  Responsable, Devise, Role,
 } from "@/lib/types";
+import type { Data, P } from "./shared";
 import { Tag, Btn, Input, Select, Field, Modal, Empty, Money, inputCls } from "./ui";
 import { AksanticLogo, AksanticMark } from "./logo";
 import { FondClair } from "./fond";
+import { Fichier } from "./fichier";
+import { Lettres } from "./lettres";
+import { Synthese } from "./synthese";
 
 const CATEGORIES = [
   "Loyer", "Internet & télécom", "Transport", "Matériel", "Licences & abonnements",
@@ -24,24 +29,19 @@ const CATEGORIES = [
 ];
 const COMPTES = ["Banque USD", "Banque CDF", "Caisse", "Mobile money"];
 
-type Data = {
-  clients: Client[]; factures: Facture[]; paiements: Paiement[]; depenses: Depense[];
-  employes: Employe[]; contrats: Contrat[]; projets: Projet[]; profiles: Profile[]; taux: number;
-};
-
 /* ======================================================================== APP */
 
 export default function Gestion({ profil }: { profil: Profile }) {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
   const [d, setD] = useState<Data | null>(null);
-  const [vue, setVue] = useState("registre");
+  const [vue, setVue] = useState("synthese");
   const [err, setErr] = useState("");
 
   const peutEcrire = profil.role === "admin" || profil.role === "finance";
 
   const charger = useCallback(async () => {
-    const [cl, fa, pa, de, em, co, pr, pf, tx] = await Promise.all([
+    const [cl, fa, pa, de, em, co, pr, le, pf, tx] = await Promise.all([
       supabase.from("clients").select("*").order("denomination"),
       supabase.from("factures").select("*").order("date", { ascending: false }),
       supabase.from("paiements").select("*"),
@@ -49,13 +49,15 @@ export default function Gestion({ profil }: { profil: Profile }) {
       supabase.from("employes").select("*").order("matricule"),
       supabase.from("contrats").select("*").order("date_debut", { ascending: false }),
       supabase.from("projets").select("*").order("nom"),
+      supabase.from("lettres").select("*").order("date_lettre", { ascending: false }),
       supabase.from("profiles").select("*").order("full_name"),
       supabase.from("parametres").select("valeur").eq("cle", "taux_usd_cdf").single(),
     ]);
     setD({
       clients: cl.data ?? [], factures: fa.data ?? [], paiements: pa.data ?? [],
       depenses: de.data ?? [], employes: em.data ?? [], contrats: co.data ?? [],
-      projets: pr.data ?? [], profiles: pf.data ?? [], taux: Number(tx.data?.valeur ?? 2900),
+      projets: pr.data ?? [], lettres: le.data ?? [],
+      profiles: pf.data ?? [], taux: Number(tx.data?.valeur ?? 2900),
     });
   }, [supabase]);
 
@@ -72,19 +74,23 @@ export default function Gestion({ profil }: { profil: Profile }) {
 
   if (!d) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-        <AksanticMark size={72} />
-        <p className="text-xs uppercase tracking-widest text-acier">Chargement du registre</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5">
+        <AksanticMark size={84} />
+        <p className="font-display text-[11px] font-bold uppercase tracking-[0.25em] text-acier">
+          Chargement du registre
+        </p>
       </div>
     );
   }
 
   const nav = [
+    { id: "synthese", label: "Synthèse", icon: PieChart },
     { id: "registre", label: "Registre", icon: LayoutDashboard },
     { id: "factures", label: "Factures", icon: FileText },
     { id: "clients", label: "Clients", icon: Users },
     { id: "depenses", label: "Dépenses", icon: Wallet },
     { id: "contrats", label: "Contrats", icon: ScrollText },
+    { id: "lettres", label: "Lettres", icon: Mail },
     { id: "equipe", label: "Équipe", icon: UserCog },
     { id: "projets", label: "Projets", icon: Boxes },
     { id: "parametres", label: "Paramètres", icon: Settings },
@@ -96,33 +102,46 @@ export default function Gestion({ profil }: { profil: Profile }) {
   return (
     <div className="min-h-screen">
       <FondClair />
-      <div className="mx-auto flex max-w-7xl flex-col lg:flex-row">
-        <aside className="shrink-0 border-b border-ciel-100 bg-white/85 backdrop-blur-sm lg:min-h-screen lg:w-56 lg:border-b-0 lg:border-r">
-          <div className="px-5 py-5">
-            <AksanticLogo size={34} />
+      <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col bg-white/40 lg:flex-row">
+        {/* La barre latérale porte la marque : navy, comme le logo. Le contenu
+            reste clair — on y passe la journée, il doit rester lisible. */}
+        <aside className="relative z-10 flex shrink-0 flex-col bg-navy-900 lg:min-h-screen lg:w-60">
+          <div className="px-5 py-6">
+            <AksanticLogo size={34} clair />
           </div>
 
           <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
-            {nav.map((n) => (
-              <button
-                key={n.id} onClick={() => setVue(n.id)}
-                className={`flex shrink-0 items-center gap-3 rounded px-3 py-2 text-sm transition-colors ${
-                  vue === n.id ? "bg-ciel-100 font-medium text-navy-900" : "text-acier hover:bg-ciel-50"
-                }`}
-              >
-                <n.icon size={16} /> {n.label}
-              </button>
-            ))}
+            {nav.map((n) => {
+              const actif = vue === n.id;
+              return (
+                <button
+                  key={n.id} onClick={() => setVue(n.id)}
+                  aria-current={actif ? "page" : undefined}
+                  className={`relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                    actif ? "bg-white/10 font-semibold text-white" : "text-ciel-300 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {/* L'orchidée ne décore pas : elle désigne. */}
+                  {actif && (
+                    <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-orchidee lg:-left-3" />
+                  )}
+                  <n.icon size={16} className={actif ? "text-orchidee" : ""} />
+                  {n.label}
+                </button>
+              );
+            })}
           </nav>
 
-          <div className="border-t border-ciel-100 px-5 py-4 lg:mt-auto">
-            <p className="truncate text-sm font-medium">{profil.full_name}</p>
-            <p className="truncate text-xs text-acier">{profil.email}</p>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <Tag>{profil.role}</Tag>
+          <div className="mt-auto border-t border-white/10 px-5 py-4">
+            <p className="truncate text-sm font-medium text-white">{profil.full_name}</p>
+            <p className="truncate text-xs text-ciel-300">{profil.email}</p>
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-ciel-200">
+                {profil.role}
+              </span>
               <button
                 onClick={async () => { await supabase.auth.signOut(); router.push("/login"); router.refresh(); }}
-                className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-acier hover:bg-ciel-50"
+                className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ciel-300 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <LogOut size={13} /> Quitter
               </button>
@@ -130,7 +149,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-5 py-6 lg:px-8">
+        <main className="relative z-10 min-w-0 flex-1 px-5 py-7 lg:px-9 lg:py-9">
           {err && (
             <div className="mb-4 flex items-start gap-2 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -143,11 +162,13 @@ export default function Gestion({ profil }: { profil: Profile }) {
             </div>
           )}
 
+          {vue === "synthese" && <Synthese {...props} />}
           {vue === "registre" && <Registre {...props} aller={setVue} />}
           {vue === "factures" && <Factures {...props} />}
           {vue === "clients" && <Clients {...props} />}
           {vue === "depenses" && <Depenses {...props} />}
           {vue === "contrats" && <Contrats {...props} />}
+          {vue === "lettres" && <Lettres {...props} />}
           {vue === "equipe" && <Equipe {...props} />}
           {vue === "projets" && <Projets {...props} />}
           {vue === "parametres" && <Parametres {...props} />}
@@ -158,15 +179,9 @@ export default function Gestion({ profil }: { profil: Profile }) {
   );
 }
 
-type P = {
-  d: Data; profil: Profile; peutEcrire: boolean;
-  ecrire: (op: PromiseLike<{ error: { message: string } | null }>) => Promise<boolean>;
-  supabase: ReturnType<typeof supabaseBrowser>; charger: () => Promise<void>;
-};
-
 const Titre = ({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) => (
   <div className="flex flex-wrap items-center justify-between gap-3">
-    <h1 className="text-2xl font-semibold tracking-tight">{children}</h1>
+    <h1 className="font-display text-2xl font-extrabold tracking-tight">{children}</h1>
     {action}
   </div>
 );
@@ -219,13 +234,13 @@ function Registre({ d, aller }: P & { aller: (v: string) => void }) {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Registre</h1>
+        <h1 className="font-display text-2xl font-extrabold tracking-tight">Registre</h1>
         <p className="mt-1 text-sm text-acier">
           {SOCIETE.denomination} · Converti en francs congolais au taux de la date d'opération.
         </p>
       </header>
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-ciel-100 ring-1 ring-ciel-100 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-ciel-100 shadow-carte ring-1 ring-ciel-100 lg:grid-cols-4">
         {[
           { l: "Encaissé", v: k.encaisse, c: "text-emerald-600" },
           { l: "En attente", v: k.attente, c: "text-amber-600" },
@@ -264,7 +279,7 @@ function Registre({ d, aller }: P & { aller: (v: string) => void }) {
           <Empty icon={LayoutDashboard} titre="Rien encore. Créez un client, puis une facture."
             action={<Btn variant="primary" onClick={() => aller("clients")}><Plus size={15} /> Ajouter un client</Btn>} />
         ) : (
-          <ol className="overflow-hidden rounded-lg bg-white ring-1 ring-ciel-100">
+          <ol className="overflow-hidden rounded-xl bg-white shadow-carte ring-1 ring-ciel-100">
             {evenements.map((e, i) => (
               <li key={i} className="flex items-center gap-3 border-b border-ciel-100 px-4 py-3 last:border-0">
                 <span className="w-24 shrink-0 font-mono text-xs text-acier">{dateFr(e.date)}</span>
@@ -344,7 +359,7 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
       ) : liste.length === 0 ? (
         <Empty icon={FileText} titre="Aucune facture." />
       ) : (
-        <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-ciel-100">
+        <div className="overflow-x-auto rounded-xl bg-white shadow-carte ring-1 ring-ciel-100">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="border-b border-ciel-100 text-left text-xs uppercase tracking-wide text-acier">
               <tr>
@@ -569,7 +584,7 @@ function Clients({ d, ecrire, supabase }: P) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {d.clients.map((c) => (
-            <div key={c.id} className="rounded-lg bg-white p-4 ring-1 ring-ciel-100">
+            <div key={c.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate font-medium">{c.denomination}</p>
@@ -648,7 +663,7 @@ function Depenses({ d, peutEcrire, ecrire, supabase }: P) {
       {d.depenses.length === 0 ? (
         <Empty icon={Wallet} titre="Aucune dépense enregistrée." />
       ) : (
-        <div className="overflow-hidden rounded-lg bg-white ring-1 ring-ciel-100">
+        <div className="overflow-hidden rounded-xl bg-white shadow-carte ring-1 ring-ciel-100">
           {d.depenses.map((x) => (
             <div key={x.id} className="flex items-center gap-3 border-b border-ciel-100 px-4 py-3 last:border-0">
               <span className="w-24 shrink-0 font-mono text-xs text-acier">{dateFr(x.date)}</span>
@@ -722,7 +737,7 @@ function Contrats({ d, ecrire, supabase }: P) {
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {d.contrats.map((c) => (
-            <div key={c.id} className="rounded-lg bg-white p-4 ring-1 ring-ciel-100">
+            <div key={c.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-acier">{c.reference}</p>
@@ -746,6 +761,15 @@ function Contrats({ d, ecrire, supabase }: P) {
                 <span className="font-mono text-sm tabular-nums">
                   {fmt(c.montant, c.devise)} <span className="text-xs text-acier">{c.devise}</span>
                 </span>
+              </div>
+
+              <div className="mt-3">
+                <Fichier
+                  dossier="contrats" base={c.id} chemin={c.pdf_path} nom={c.pdf_nom}
+                  libelle="Joindre le contrat signé (PDF)"
+                  onChange={(v) => ecrire(
+                    supabase.from("contrats").update({ pdf_path: v.path, pdf_nom: v.nom }).eq("id", c.id))}
+                />
               </div>
             </div>
           ))}
@@ -774,8 +798,11 @@ function Contrats({ d, ecrire, supabase }: P) {
 
 function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
   const [edit, setEdit] = useState<Partial<Employe> | null>(null);
+  // Pas de matricule ici : la base le génère (séquence + défaut AT-00X).
+  // Le calculer côté client, c'est se garantir un doublon le jour où deux
+  // personnes créent une fiche au même moment.
   const vide = () => ({
-    matricule: `AT-${String(d.employes.length + 1).padStart(3, "0")}`, nom: "", poste: "",
+    nom: "", poste: "", job_description: "",
     email: "", phone: "", date_embauche: today(), salaire: 0, devise: "USD" as Devise, actif: true,
   });
 
@@ -806,12 +833,15 @@ function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {d.employes.map((e) => (
-            <div key={e.id} className="rounded-lg bg-white p-4 ring-1 ring-ciel-100">
+            <div key={e.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-acier">{e.matricule}</p>
                   <p className="mt-1 truncate font-medium">{e.nom}</p>
                   <p className="truncate text-xs text-acier">{e.poste}</p>
+                  {e.job_description && (
+                    <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-ciel-300">{e.job_description}</p>
+                  )}
                 </div>
                 {peutEcrire && (
                   <div className="flex shrink-0">
@@ -838,14 +868,18 @@ function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
       {edit && (
         <FormSimple titre={edit.id ? "Modifier" : "Nouveau membre"} v={edit} onClose={() => setEdit(null)} onSave={save}
           champs={[
-            { k: "matricule", l: "Matricule", req: true },
+            ...(edit.id
+              ? [{ k: "matricule", l: "Matricule", disabled: true, hint: "Généré par la base. Non modifiable." }]
+              : []),
             { k: "nom", l: "Nom complet", req: true },
-            { k: "poste", l: "Poste" },
-            { k: "date_embauche", l: "Date d'embauche", type: "date" },
-            { k: "email", l: "Email", type: "email" },
+            { k: "poste", l: "Poste", req: true },
+            { k: "job_description", l: "Description de poste", type: "textarea" as const,
+              hint: "Ce que la personne fait vraiment. Servira de base au contrat de travail." },
+            { k: "date_embauche", l: "Date d'embauche", type: "date" as const },
+            { k: "email", l: "Email", type: "email" as const },
             { k: "phone", l: "Téléphone" },
-            { k: "salaire", l: "Salaire mensuel", type: "number" },
-            { k: "devise", l: "Devise", type: "select", options: [{ v: "USD", t: "USD" }, { v: "CDF", t: "CDF" }] },
+            { k: "salaire", l: "Salaire mensuel", type: "number" as const },
+            { k: "devise", l: "Devise", type: "select" as const, options: [{ v: "USD", t: "USD" }, { v: "CDF", t: "CDF" }] },
           ]} />
       )}
     </div>
@@ -856,12 +890,24 @@ function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
 
 function Projets({ d, ecrire, supabase }: P) {
   const [edit, setEdit] = useState<Partial<Projet> | null>(null);
-  const vide = { nom: "", client_id: "", description: "", url: "", statut: "en cours" as const };
   const nomClient = (id: string | null) => d.clients.find((c) => c.id === id)?.denomination ?? "Interne";
+
+  const vide = (): Partial<Projet> => ({
+    nom: "", client_id: "", description: "", url: "", statut: "en cours",
+    echeance: "", responsables: [],
+  });
 
   const save = async (x: Partial<Projet>) => {
     const { id, ...c } = x;
-    const champs = { ...c, client_id: c.client_id || null };
+    const champs = {
+      ...c,
+      client_id: c.client_id || null,
+      echeance: c.echeance || null,
+      url: c.url || null,
+      // On ne garde que les lignes réellement remplies : deux responsables vides
+      // en base, ce sont deux lignes de bruit à filtrer partout ensuite.
+      responsables: (c.responsables ?? []).filter((r) => r.nom.trim()),
+    };
     const ok = id
       ? await ecrire(supabase.from("projets").update(champs).eq("id", id))
       : await ecrire(supabase.from("projets").insert(champs));
@@ -870,53 +916,187 @@ function Projets({ d, ecrire, supabase }: P) {
 
   return (
     <div className="space-y-6">
-      <Titre action={<Btn variant="primary" onClick={() => setEdit(vide)}><Plus size={15} /> Ajouter un projet</Btn>}>
+      <Titre action={<Btn variant="primary" onClick={() => setEdit(vide())}><Plus size={15} /> Ajouter un projet</Btn>}>
         Projets
       </Titre>
 
       {d.projets.length === 0 ? (
         <Empty icon={Boxes} titre="Aucun projet."
-          action={<Btn variant="primary" onClick={() => setEdit(vide)}><Plus size={15} /> Ajouter un projet</Btn>} />
+          action={<Btn variant="primary" onClick={() => setEdit(vide())}><Plus size={15} /> Ajouter un projet</Btn>} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {d.projets.map((p) => (
-            <div key={p.id} className="rounded-lg bg-white p-4 ring-1 ring-ciel-100">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{p.nom}</p>
-                  <p className="truncate text-xs text-acier">{nomClient(p.client_id)}</p>
+          {d.projets.map((p) => {
+            const enRetard = p.echeance && p.echeance < today() && p.statut !== "livre";
+            return (
+              <div key={p.id} className="flex flex-col rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{p.nom}</p>
+                    <p className="truncate text-xs text-acier">{nomClient(p.client_id)}</p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <button onClick={() => setEdit(p)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
+                    <button onClick={() => ecrire(supabase.from("projets").delete().eq("id", p.id))}
+                      className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                <div className="flex shrink-0">
-                  <button onClick={() => setEdit(p)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
-                  <button onClick={() => ecrire(supabase.from("projets").delete().eq("id", p.id))}
-                    className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+
+                {p.description && <p className="mt-2 line-clamp-2 text-xs text-acier">{p.description}</p>}
+
+                {(p.responsables ?? []).length > 0 && (
+                  <ul className="mt-3 space-y-1">
+                    {p.responsables.map((r, i) => (
+                      <li key={i} className="flex items-center gap-2 text-xs">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ciel-100 font-mono text-[9px] text-navy-900">
+                          {r.nom.split(" ").map((m) => m[0]).slice(0, 2).join("")}
+                        </span>
+                        <span className="truncate font-medium">{r.nom}</span>
+                        {r.role && <span className="truncate text-ciel-300">· {r.role}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-ciel-100 pt-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Tag tone={p.statut === "livre" ? "ok" : p.statut === "en cours" ? "wait" : "muted"}>{p.statut}</Tag>
+                    {enRetard && <Tag tone="late">Échéance dépassée</Tag>}
+                  </div>
+                  {p.url && (
+                    <a href={p.url} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1 text-xs text-acier underline hover:text-navy-900">
+                      <ExternalLink size={12} /> Ouvrir
+                    </a>
+                  )}
                 </div>
+                {p.echeance && (
+                  <p className={`mt-1.5 text-xs ${enRetard ? "text-red-600" : "text-ciel-300"}`}>
+                    Échéance : {dateFr(p.echeance)}
+                  </p>
+                )}
               </div>
-              {p.description && <p className="mt-2 text-xs text-acier">{p.description}</p>}
-              <div className="mt-3 flex items-center justify-between border-t border-ciel-100 pt-3">
-                <Tag tone={p.statut === "livre" ? "ok" : p.statut === "en cours" ? "wait" : "muted"}>{p.statut}</Tag>
-                {p.url && <a href={p.url} target="_blank" rel="noreferrer" className="text-xs text-acier underline hover:text-navy-900">Ouvrir</a>}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {edit && (
-        <FormSimple titre={edit.id ? "Modifier le projet" : "Nouveau projet"} v={edit} onClose={() => setEdit(null)} onSave={save}
-          champs={[
-            { k: "nom", l: "Nom", req: true },
-            { k: "client_id", l: "Client", type: "select",
-              options: [{ v: "", t: "Interne" }, ...d.clients.map((c) => ({ v: c.id, t: c.denomination }))] },
-            { k: "statut", l: "Statut", type: "select",
-              options: ["cadrage", "en cours", "livre", "maintenance", "en pause"].map((s) => ({ v: s, t: s })) },
-            { k: "description", l: "Description" },
-            { k: "url", l: "Lien" },
-          ]} />
-      )}
+      {edit && <FormProjet v={edit} clients={d.clients} employes={d.employes}
+        onSave={save} onClose={() => setEdit(null)} />}
     </div>
   );
 }
+
+function FormProjet({
+  v: init, clients, employes, onSave, onClose,
+}: {
+  v: Partial<Projet>; clients: Client[]; employes: Employe[];
+  onSave: (v: Partial<Projet>) => void; onClose: () => void;
+}) {
+  const [v, setV] = useState<Partial<Projet>>({ ...init, responsables: init.responsables ?? [] });
+  const [err, setErr] = useState("");
+  const maj = (k: keyof Projet) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setV({ ...v, [k]: e.target.value });
+
+  const resp = v.responsables ?? [];
+  const majResp = (i: number, champ: keyof Responsable, val: string) => {
+    const liste: Responsable[] = [...resp];
+    while (liste.length <= i) liste.push({ employe_id: null, nom: "", role: "" });
+    if (champ === "employe_id") {
+      // Le nom est recopié : si la personne quitte l'entreprise et que sa fiche
+      // disparaît, l'historique du projet reste lisible.
+      const e = employes.find((x) => x.id === val);
+      liste[i] = { ...liste[i], employe_id: val || null, nom: e?.nom ?? "" };
+    } else {
+      liste[i] = { ...liste[i], [champ]: val };
+    }
+    setV({ ...v, responsables: liste });
+  };
+
+  const valider = () => {
+    if (!v.nom?.trim()) return setErr("Le nom du projet est obligatoire.");
+    if (v.url && !/^https?:\/\//i.test(v.url)) return setErr("Le lien doit commencer par http:// ou https://");
+    onSave(v);
+  };
+
+  return (
+    <Modal title={v.id ? "Modifier le projet" : "Nouveau projet"} onClose={onClose} wide>
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nom"><Input value={v.nom ?? ""} onChange={maj("nom")} placeholder="Mpangi_Pharma" /></Field>
+          <Field label="Client">
+            <Select value={v.client_id ?? ""} onChange={maj("client_id")}>
+              <option value="">Interne</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.denomination}</option>)}
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Description">
+          <textarea rows={3} value={v.description ?? ""} onChange={maj("description")}
+            placeholder="Ce que fait le projet, pour qui, et ce qui reste à livrer."
+            className={inputCls} />
+        </Field>
+
+        {/* Responsables : deux au plus. Au-delà, plus personne n'est responsable. */}
+        <div>
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-acier">
+            Responsables
+          </span>
+          <p className="mb-2 text-xs text-ciel-300">
+            Deux au maximum. Au-delà, plus personne ne l'est vraiment.
+          </p>
+          <div className="space-y-2">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex gap-2">
+                <select
+                  value={resp[i]?.employe_id ?? ""} onChange={(e) => majResp(i, "employe_id", e.target.value)}
+                  className={`${inputCls} flex-1`}
+                >
+                  <option value="">{i === 0 ? "— Responsable principal —" : "— Second responsable (facultatif) —"}</option>
+                  {employes.filter((e) => e.actif).map((e) => (
+                    <option key={e.id} value={e.id}>{e.nom}{e.poste ? ` — ${e.poste}` : ""}</option>
+                  ))}
+                </select>
+                <input
+                  value={resp[i]?.role ?? ""} onChange={(e) => majResp(i, "role", e.target.value)}
+                  placeholder={i === 0 ? "Chef de projet" : "Développeur"}
+                  className={`${inputCls} w-44`}
+                />
+              </div>
+            ))}
+          </div>
+          {employes.filter((e) => e.actif).length === 0 && (
+            <p className="mt-1 text-xs text-amber-600">
+              Aucun membre actif dans l'équipe : ajoutez-en un pour pouvoir désigner un responsable.
+            </p>
+          )}
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Statut">
+            <Select value={v.statut} onChange={maj("statut")}>
+              {["cadrage", "en cours", "livre", "maintenance", "en pause"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </Field>
+          <Field label="Échéance" hint="Vide si pas de date cible.">
+            <Input type="date" value={v.echeance ?? ""} onChange={maj("echeance")} />
+          </Field>
+          <Field label="Lien" hint="Si le projet est un site en ligne.">
+            <Input value={v.url ?? ""} onChange={maj("url")} placeholder="https://…" />
+          </Field>
+        </div>
+
+        {err && <p className="text-sm text-red-600">{err}</p>}
+
+        <div className="flex justify-end gap-2 border-t border-ciel-100 pt-4">
+          <Btn onClick={onClose}>Annuler</Btn>
+          <Btn variant="primary" onClick={valider}>Enregistrer</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 
 /* ================================================================ PARAMÈTRES */
 
@@ -1002,7 +1182,7 @@ function Admin({ d, profil, charger }: P) {
       {err && <p className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</p>}
       {msg && <p className="rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{msg}</p>}
 
-      <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-ciel-100">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-carte ring-1 ring-ciel-100">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="border-b border-ciel-100 text-left text-xs uppercase tracking-wide text-acier">
             <tr>
@@ -1121,8 +1301,8 @@ function FormCompte({
 /* ======================================================== FORMULAIRE GÉNÉRIQUE */
 
 type Champ = {
-  k: string; l: string; req?: boolean; hint?: string;
-  type?: "text" | "email" | "number" | "date" | "select";
+  k: string; l: string; req?: boolean; hint?: string; disabled?: boolean;
+  type?: "text" | "email" | "number" | "date" | "select" | "textarea";
   options?: { v: string; t: string }[];
 };
 
@@ -1144,11 +1324,18 @@ function FormSimple<T extends Record<string, unknown>>({
         {champs.map((c) => (
           <Field key={c.k} label={c.l} hint={c.hint}>
             {c.type === "select" ? (
-              <Select value={String(v[c.k] ?? "")} onChange={(e) => setV({ ...v, [c.k]: e.target.value } as T)}>
+              <Select value={String(v[c.k] ?? "")} disabled={c.disabled}
+                onChange={(e) => setV({ ...v, [c.k]: e.target.value } as T)}>
                 {c.options!.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
               </Select>
+            ) : c.type === "textarea" ? (
+              <textarea
+                rows={3} value={String(v[c.k] ?? "")} disabled={c.disabled}
+                onChange={(e) => setV({ ...v, [c.k]: e.target.value } as T)}
+                className={inputCls}
+              />
             ) : (
-              <Input type={c.type ?? "text"} value={String(v[c.k] ?? "")}
+              <Input type={c.type ?? "text"} value={String(v[c.k] ?? "")} disabled={c.disabled}
                 onChange={(e) => setV({ ...v, [c.k]: e.target.value } as T)} />
             )}
           </Field>

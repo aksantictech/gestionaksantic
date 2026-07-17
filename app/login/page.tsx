@@ -4,7 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { SOCIETE } from "@/lib/money";
-import { Loader2 } from "lucide-react";
+import { AksanticMark, AksanticLogo } from "@/components/logo";
+import { FondNavy } from "@/components/fond";
+import { Loader2, ArrowRight, ExternalLink } from "lucide-react";
+
+const SITE = "https://www.aksantictech.com";
 
 export default function Login() {
   const router = useRouter();
@@ -25,8 +29,7 @@ export default function Login() {
     });
 
     if (error) {
-      // On n'indique jamais si c'est l'email ou le mot de passe qui est faux :
-      // ça révélerait quels comptes existent.
+      // On ne dit jamais lequel des deux est faux : ça révélerait quels comptes existent.
       setErreur("Adresse ou mot de passe incorrect.");
       setCharge(false);
       return;
@@ -48,87 +51,116 @@ export default function Login() {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Le bloc navy : la marque, à l'échelle où elle se lit. */}
-      <div className="hidden flex-col justify-between bg-navy-900 p-12 text-white lg:flex">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded bg-white font-mono text-sm font-bold text-navy-900">
-            AT
+    <div className="min-h-screen lg:grid lg:grid-cols-[1.15fr_1fr]">
+      {/* ------------------------------------------------ le panneau de marque */}
+      <div className="relative hidden overflow-hidden bg-navy-900 lg:flex lg:flex-col">
+        <FondNavy />
+
+        <header className="relative z-10 px-12 pt-10">
+          <AksanticLogo size={40} clair />
+        </header>
+
+        {/* La sphère est le sujet. Tout le reste lui laisse la place. */}
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-12">
+          <div className="relative">
+            <div className="respire absolute inset-0 -m-16 rounded-full bg-acier blur-3xl" />
+            <AksanticMark size={300} clair className="relative" />
           </div>
-          <span className="text-lg font-semibold tracking-tight">Aksantic</span>
+
+          <div className="monte mt-10 max-w-md text-center">
+            <h2 className="font-display text-3xl font-extrabold leading-tight tracking-tight text-white">
+              Le registre de l'entreprise.
+            </h2>
+            <p className="mt-4 text-sm leading-relaxed text-ciel-200">
+              Clients, factures, encaissements, dépenses, contrats, courrier, équipe.
+              Un seul endroit, à jour, consultable depuis Kinshasa comme d'ailleurs.
+            </p>
+          </div>
         </div>
 
-        <div>
-          <p className="max-w-md text-3xl font-semibold leading-tight tracking-tight">
-            Le registre de l'entreprise.
-          </p>
-          <p className="mt-4 max-w-md text-ciel-300">
-            Clients, factures, encaissements, dépenses, contrats, équipe. Un seul endroit,
-            à jour, consultable depuis Kinshasa comme d'ailleurs.
-          </p>
-        </div>
-
-        <dl className="space-y-1 font-mono text-xs text-ciel-300">
-          <div className="flex gap-3"><dt className="w-14 text-acier-500">RCCM</dt><dd>{SOCIETE.rccm}</dd></div>
-          <div className="flex gap-3"><dt className="w-14 text-acier-500">Id.Nat</dt><dd>{SOCIETE.idNat}</dd></div>
-        </dl>
+        <footer className="relative z-10 flex items-end justify-between gap-6 border-t border-white/10 px-12 py-6">
+          <dl className="space-y-1 font-mono text-[11px] text-ciel-300">
+            <div className="flex gap-3"><dt className="w-12 text-acier-500">RCCM</dt><dd>{SOCIETE.rccm}</dd></div>
+            <div className="flex gap-3"><dt className="w-12 text-acier-500">Id.Nat</dt><dd>{SOCIETE.idNat}</dd></div>
+          </dl>
+          <a
+            href={SITE} target="_blank" rel="noreferrer"
+            className="flex shrink-0 items-center gap-1.5 text-xs text-ciel-300 transition-colors hover:text-orchidee"
+          >
+            aksantictech.com <ExternalLink size={12} />
+          </a>
+        </footer>
       </div>
 
-      {/* Le formulaire */}
-      <div className="flex items-center justify-center bg-white px-6 py-12">
-        <form onSubmit={connecter} className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded bg-navy-900 font-mono text-sm font-bold text-white">
-              AT
-            </div>
-            <span className="text-lg font-semibold">Aksantic</span>
+      {/* ------------------------------------------------------- le formulaire */}
+      <div className="flex min-h-screen flex-col justify-center bg-white px-6 py-12 sm:px-12">
+        <div className="mx-auto w-full max-w-sm">
+          <div className="mb-10 flex justify-center lg:hidden">
+            <AksanticLogo size={52} />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight">Connexion</h1>
-          <p className="mt-1 text-sm text-acier">Avec l'adresse fournie par votre administrateur.</p>
+          <div className="monte">
+            <h1 className="font-display text-2xl font-extrabold tracking-tight">Connexion</h1>
+            <p className="mt-1.5 text-sm text-acier">
+              Avec l'adresse que votre administrateur vous a communiquée.
+            </p>
+          </div>
 
-          <div className="mt-8 space-y-4">
+          <form onSubmit={connecter} className="monte monte-2 mt-9 space-y-5">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-acier">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-acier">
                 Adresse email
               </span>
               <input
                 type="email" required autoComplete="email" autoFocus
                 value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="prenom@aksantictech.com"
-                className="w-full rounded border border-ciel-300 px-3 py-2.5 text-sm placeholder-ciel-300 focus:border-acier focus:outline-none focus:ring-1 focus:ring-acier"
+                className="champ"
               />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-acier">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-acier">
                 Mot de passe
               </span>
               <input
                 type="password" required autoComplete="current-password"
                 value={mdp} onChange={(e) => setMdp(e.target.value)}
-                className="w-full rounded border border-ciel-300 px-3 py-2.5 text-sm focus:border-acier focus:outline-none focus:ring-1 focus:ring-acier"
+                className="champ"
               />
             </label>
 
             {erreur && (
-              <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
                 {erreur}
               </p>
             )}
 
             <button
               type="submit" disabled={charge}
-              className="flex w-full items-center justify-center gap-2 rounded bg-navy-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-navy-700 disabled:opacity-60"
+              className="group flex w-full items-center justify-center gap-2 rounded-lg bg-navy-900 px-4 py-3 text-sm font-semibold text-white shadow-carte transition-all hover:bg-navy-700 hover:shadow-leve disabled:opacity-60"
             >
-              {charge ? <><Loader2 size={15} className="animate-spin" /> Connexion…</> : "Se connecter"}
+              {charge ? (
+                <><Loader2 size={16} className="animate-spin" /> Connexion…</>
+              ) : (
+                <>Se connecter <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" /></>
+              )}
             </button>
-          </div>
+          </form>
 
-          <p className="mt-6 text-xs text-acier">
-            Pas de compte ? Les comptes sont créés par un administrateur depuis l'onglet Admin.
-          </p>
-        </form>
+          <div className="mt-10 border-t border-ciel-100 pt-6">
+            <p className="text-xs leading-relaxed text-acier">
+              Pas de compte ? Ils sont créés par un administrateur depuis l'onglet Admin.
+              Le mot de passe se transmet de vive voix, jamais par message.
+            </p>
+            <a
+              href={SITE} target="_blank" rel="noreferrer"
+              className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-orchidee-600 transition-colors hover:text-navy-900"
+            >
+              www.aksantictech.com <ExternalLink size={12} />
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
