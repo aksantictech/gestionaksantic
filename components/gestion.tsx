@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, FileText, Wallet, UserCog, ScrollText, Boxes,
   Settings, ShieldCheck, Plus, Search, X, Trash2, Pencil, Check, LogOut,
-  ArrowDownRight, ArrowUpRight, AlertTriangle, Loader2, Building2,
+  ArrowDownRight, ArrowUpRight, AlertTriangle, Building2,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import {
@@ -15,6 +15,8 @@ import type {
   Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet, Devise, Role,
 } from "@/lib/types";
 import { Tag, Btn, Input, Select, Field, Modal, Empty, Money, inputCls } from "./ui";
+import { AksanticLogo, AksanticMark } from "./logo";
+import { FondClair } from "./fond";
 
 const CATEGORIES = [
   "Loyer", "Internet & télécom", "Transport", "Matériel", "Licences & abonnements",
@@ -70,8 +72,9 @@ export default function Gestion({ profil }: { profil: Profile }) {
 
   if (!d) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="animate-spin text-acier" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+        <AksanticMark size={72} />
+        <p className="text-xs uppercase tracking-widest text-acier">Chargement du registre</p>
       </div>
     );
   }
@@ -92,16 +95,11 @@ export default function Gestion({ profil }: { profil: Profile }) {
 
   return (
     <div className="min-h-screen">
+      <FondClair />
       <div className="mx-auto flex max-w-7xl flex-col lg:flex-row">
-        <aside className="shrink-0 border-b border-ciel-100 bg-white lg:min-h-screen lg:w-56 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-3 px-5 py-5">
-            <div className="flex h-9 w-9 items-center justify-center rounded bg-navy-900 font-mono text-sm font-bold text-white">
-              AT
-            </div>
-            <div className="leading-tight">
-              <p className="text-sm font-semibold">Aksantic</p>
-              <p className="text-xs text-acier">Gestion</p>
-            </div>
+        <aside className="shrink-0 border-b border-ciel-100 bg-white/85 backdrop-blur-sm lg:min-h-screen lg:w-56 lg:border-b-0 lg:border-r">
+          <div className="px-5 py-5">
+            <AksanticLogo size={34} />
           </div>
 
           <nav className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:overflow-visible">
