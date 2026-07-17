@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import { SOCIETE } from "@/lib/money";
 import { AksanticMark, AksanticLogo } from "@/components/logo";
@@ -11,7 +10,6 @@ import { Loader2, ArrowRight, ExternalLink } from "lucide-react";
 const SITE = "https://www.aksantictech.com";
 
 export default function Login() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [mdp, setMdp] = useState("");
   const [erreur, setErreur] = useState("");
@@ -61,10 +59,21 @@ export default function Login() {
         }
       }
 
-      // replace, pas push : on ne laisse pas la page de connexion dans
-      // l'historique. Bouton Retour = retour au registre, pas au formulaire.
-      router.replace("/");
-      router.refresh();
+      // NAVIGATION DURE, ET C'EST VOULU.
+      //
+      // router.replace() passe par le Router Cache de l'App Router. Or ce cache
+      // contient encore la réponse de "/" d'AVANT la connexion — c'est-à-dire
+      // la redirection vers /login. Le routeur croit alors nous emmener au
+      // registre et ressert la page de connexion mémorisée : aucune erreur,
+      // aucun rechargement, le bouton tourne indéfiniment. Le 304 sur la
+      // requête ?_rsc= en est la signature.
+      //
+      // router.refresh() est censé invalider ce cache, mais il perd la course.
+      // location.assign() vide le problème : rechargement complet, cookies
+      // envoyés, middleware réexécuté côté serveur. Ça coûte une seconde,
+      // une fois par session. Le prix est juste.
+      window.location.assign("/");
+      return; // on laisse le bouton tourner : la page part.
     } catch (e) {
       console.error("Connexion :", e);
       setErreur(
