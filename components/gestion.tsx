@@ -53,6 +53,23 @@ export default function Gestion({ profil }: { profil: Profile }) {
       supabase.from("profiles").select("*").order("full_name"),
       supabase.from("parametres").select("valeur").eq("cle", "taux_usd_cdf").single(),
     ]);
+
+    // Un écran vide sans explication, c'est le pire des deux mondes : on croit
+    // qu'il n'y a pas de données alors que la requête a échoué. On le dit.
+    const rate = [
+      ["clients", cl], ["factures", fa], ["paiements", pa], ["dépenses", de],
+      ["équipe", em], ["contrats", co], ["projets", pr], ["lettres", le],
+    ].filter(([, r]) => (r as { error: unknown }).error);
+
+    if (rate.length) {
+      const manquant = rate.some(([, r]) =>
+        String((r as { error: { message?: string } }).error?.message ?? "").includes("does not exist"));
+      setErr(
+        `Impossible de charger : ${rate.map(([n]) => n).join(", ")}.` +
+        (manquant ? " Une table manque : exécutez supabase/migration-002.sql dans Supabase." : ""),
+      );
+    }
+
     setD({
       clients: cl.data ?? [], factures: fa.data ?? [], paiements: pa.data ?? [],
       depenses: de.data ?? [], employes: em.data ?? [], contrats: co.data ?? [],

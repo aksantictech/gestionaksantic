@@ -142,3 +142,46 @@ rattraper coûte une semaine. La garder coûte zéro aujourd'hui.
 Supabase sauvegarde quotidiennement (plan gratuit : 7 jours de rétention).
 Testez une restauration avant d'en avoir besoin — une sauvegarde jamais restaurée
 n'est pas une sauvegarde.
+
+
+---
+
+## En cas de blocage
+
+### Le bouton « Connexion » tourne indéfiniment
+
+Trois causes, par ordre de fréquence :
+
+1. **Variables d'environnement absentes sur Vercel.** `.env.local` est dans
+   `.gitignore` : il ne part jamais. Recopiez les trois variables dans
+   **Vercel → Settings → Environment Variables**, pour Production **et** Preview,
+   puis **redéployez** — un changement de variable ne s'applique pas au
+   déploiement en cours.
+2. **Cookies perdus à la redirection.** Corrigé dans `middleware.ts` : toute
+   redirection recopie les cookies posés par le rafraîchissement de session.
+   Si vous aviez une version antérieure, c'était la cause.
+3. **Compte désactivé ou profil absent.** Vérifiez :
+   ```sql
+   select email, role, is_active from profiles;
+   ```
+   Si la ligne manque, le trigger `handle_new_user` n'a pas tourné : créez-la à
+   la main, puis passez le rôle à `admin`.
+
+Ouvrez la console du navigateur (F12) : depuis la correction, toute erreur
+s'affiche à l'écran et se journalise. Un écran muet est un écran cassé.
+
+### L'application est lente
+
+- **Région Supabase.** Depuis Kinshasa, un projet hébergé aux États-Unis ajoute
+  200 à 400 ms à chaque requête, et le tableau de bord en fait dix. Vérifiez
+  dans **Project Settings → General → Region**. Frankfurt ou Londres divisent la
+  latence par deux ou trois. La région ne se change pas après coup : il faut un
+  nouveau projet et une restauration de sauvegarde. À arbitrer maintenant, tant
+  que le volume de données est faible.
+- **Le premier chargement charge tout.** Dix tables en parallèle. Acceptable à
+  votre volume, à revoir passé quelques milliers de factures.
+
+### « relation "lettres" does not exist »
+
+`supabase/migration-002.sql` n'a pas été exécuté. L'application vous le dit
+maintenant explicitement en haut de l'écran.

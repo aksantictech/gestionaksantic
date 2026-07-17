@@ -22,32 +22,57 @@ export default function Login() {
     setErreur("");
     setCharge(true);
 
-    const supabase = supabaseBrowser();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password: mdp,
-    });
+    // try/catch/finally obligatoire : sans lui, la moindre exception laisse le
+    // bouton tourner indéfiniment, sans un mot. Un écran qui échoue en silence
+    // est un écran cassé.
+    try {
+      const supabase = supabaseBrowser();
 
-    if (error) {
-      // On ne dit jamais lequel des deux est faux : ça révélerait quels comptes existent.
-      setErreur("Adresse ou mot de passe incorrect.");
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: mdp,
+      });
+
+      if (error) {
+        // On ne dit jamais lequel des deux est faux : ça révélerait quels
+        // comptes existent.
+        setErreur(
+          error.message.toLowerCase().includes("fetch")
+            ? "Serveur injoignable. Vérifiez votre connexion."
+            : "Adresse ou mot de passe incorrect.",
+        );
+        setCharge(false);
+        return;
+      }
+
+      // La vérification du compte se refait de toute façon côté serveur dans
+      // app/page.tsx. Ici, c'est seulement pour donner un message clair plutôt
+      // qu'un aller-retour muet.
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profil } = await supabase
+          .from("profiles").select("is_active").eq("id", user.id).single();
+
+        if (profil && !profil.is_active) {
+          await supabase.auth.signOut();
+          setErreur("Ce compte a été désactivé. Contactez un administrateur.");
+          setCharge(false);
+          return;
+        }
+      }
+
+      // replace, pas push : on ne laisse pas la page de connexion dans
+      // l'historique. Bouton Retour = retour au registre, pas au formulaire.
+      router.replace("/");
+      router.refresh();
+    } catch (e) {
+      console.error("Connexion :", e);
+      setErreur(
+        "La connexion a échoué. Si cela se reproduit, prévenez l'administrateur : " +
+        (e as Error).message,
+      );
       setCharge(false);
-      return;
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profil } = await supabase
-      .from("profiles").select("is_active").eq("id", user!.id).single();
-
-    if (profil && !profil.is_active) {
-      await supabase.auth.signOut();
-      setErreur("Ce compte a été désactivé. Contactez un administrateur.");
-      setCharge(false);
-      return;
-    }
-
-    router.push("/");
-    router.refresh();
   };
 
   return (
