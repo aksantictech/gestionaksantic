@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+body { @apply bg-ciel-50 text-navy-900 antialiased; }
+
+/* Le clavier doit rester utilisable : l'anneau de focus ne se négocie pas. */
+:focus-visible { @apply outline-none ring-2 ring-acier ring-offset-2 ring-offset-white; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
