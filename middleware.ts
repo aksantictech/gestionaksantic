@@ -45,7 +45,11 @@ export async function middleware(request: NextRequest) {
     return redirection;
   };
 
-  if (!user && path !== "/login") return rediriger("/login");
+  // Le diagnostic doit rester joignable sans session : c'est justement quand on
+  // n'arrive pas à se connecter qu'on en a besoin.
+  const libre = path === "/login" || path === "/diagnostic";
+
+  if (!user && !libre) return rediriger("/login");
   if (user && path === "/login") return rediriger("/");
 
   return response;
