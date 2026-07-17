@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase";
+import { supabaseBrowser } from "@/lib/supabase-client";
 import { SOCIETE } from "@/lib/money";
 import { Loader2 } from "lucide-react";
 

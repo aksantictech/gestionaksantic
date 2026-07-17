@@ -7,7 +7,7 @@ import {
   Settings, ShieldCheck, Plus, Search, X, Trash2, Pencil, Check, LogOut,
   ArrowDownRight, ArrowUpRight, AlertTriangle, Loader2, Building2,
 } from "lucide-react";
-import { supabaseBrowser } from "@/lib/supabase";
+import { supabaseBrowser } from "@/lib/supabase-client";
 import {
   toCdf, fmt, dateFr, today, totalFacture, payeCdf, resteCdf, etatFacture, SOCIETE,
 } from "@/lib/money";

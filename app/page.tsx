@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { supabaseServer } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabase-server";
 import Gestion from "@/components/gestion";
 import type { Profile } from "@/lib/types";
 
