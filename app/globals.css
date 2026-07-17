@@ -43,8 +43,11 @@ body {
 }
 .respire { animation: respire 7s ease-in-out infinite; }
 
+/* PAS de w-full ici : dans une ligne de facture, la quantité veut w-20 et le
+   prix w-32. Une largeur posée dans .champ les écrasait toutes — c'est ce qui
+   réduisait le libellé à un timbre-poste. La largeur se décide au cas par cas. */
 .champ {
-  @apply w-full rounded-lg border border-ciel-100 bg-ciel-50 px-3.5 py-2.5 text-sm text-navy-900
+  @apply rounded-lg border border-ciel-100 bg-ciel-50 px-3.5 py-2.5 text-sm text-navy-900
          placeholder-ciel-300 transition-colors;
 }
 .champ:focus {
@@ -53,4 +56,25 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+
+/* ---------------------------------------------------------------- impression
+   La facture s'imprime, ou s'enregistre en PDF via la boîte d'impression du
+   navigateur. Pas de bibliothèque PDF : le rendu est celui de l'écran, le logo
+   reste vectoriel, et rien ne pèse sur le chargement. */
+@media print {
+  @page { size: A4; margin: 14mm 14mm 12mm; }
+  body { background: #fff !important; }
+  .rien-a-imprimer { display: none !important; }
+  .a-imprimer { position: static !important; inset: auto !important; }
+  .facture-papier {
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    width: 100% !important;
+  }
+  .saut-evite { break-inside: avoid; }
 }

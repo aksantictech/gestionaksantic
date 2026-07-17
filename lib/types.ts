@@ -13,7 +13,20 @@ export interface Ligne { designation: string; qte: number; pu: number }
 export interface Facture {
   id: string; numero: string; client_id: string; objet: string | null;
   date: string; echeance: string; devise: Devise; taux: number;
-  lignes: Ligne[]; statut: "brouillon" | "emise";
+  lignes: Ligne[];
+  /** Ce qu'un humain décide. « En souffrance » et « payée » se calculent. */
+  statut: "brouillon" | "emise" | "annulee";
+  annulee_motif: string | null;
+}
+
+/** Écrit par des triggers en base. L'application ne fait que le lire. */
+export interface HistoriqueFacture {
+  id: number;
+  facture_id: string;
+  acteur_nom: string | null;
+  action: "creation" | "modification" | "emission" | "annulation" | "encaissement" | "suppression_encaissement";
+  detail: Record<string, unknown>;
+  at: string;
 }
 export interface Paiement {
   id: string; facture_id: string; date: string; montant: number;

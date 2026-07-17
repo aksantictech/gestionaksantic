@@ -46,8 +46,11 @@ export function Btn({
   );
 }
 
-/** Un seul style de champ dans toute l'application. Défini une fois, dans globals.css. */
-export const inputCls = "champ disabled:cursor-not-allowed disabled:text-acier disabled:opacity-70";
+/** Le style, sans largeur. À utiliser quand on veut fixer la largeur soi-même. */
+export const champCls = "champ disabled:cursor-not-allowed disabled:text-acier disabled:opacity-70";
+
+/** Le style pleine largeur — le cas courant. */
+export const inputCls = `${champCls} w-full`;
 
 export const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => (
   <input {...p} className={`${inputCls} ${p.className || ""}`} />

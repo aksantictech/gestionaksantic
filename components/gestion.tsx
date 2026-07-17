@@ -6,17 +6,20 @@ import {
   LayoutDashboard, Users, FileText, Wallet, UserCog, ScrollText, Boxes,
   Settings, ShieldCheck, Plus, Search, X, Trash2, Pencil, Check, LogOut,
   ArrowDownRight, ArrowUpRight, AlertTriangle, Building2, Mail, PieChart, ExternalLink,
+  Printer, History, Ban, Filter, ChevronRight,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import {
   toCdf, fmt, dateFr, today, totalFacture, payeCdf, resteCdf, etatFacture, SOCIETE,
 } from "@/lib/money";
+import type { EtatCode } from "@/lib/money";
 import type {
   Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet,
-  Responsable, Devise, Role,
+  Responsable, Devise, Role, HistoriqueFacture,
 } from "@/lib/types";
 import type { Data, P } from "./shared";
-import { Tag, Btn, Input, Select, Field, Modal, Empty, Money, inputCls } from "./ui";
+import { Tag, Btn, Input, Select, Field, Modal, Empty, Money, inputCls, champCls } from "./ui";
+import { FacturePapier } from "./facture-papier";
 import { AksanticLogo, AksanticMark } from "./logo";
 import { FondClair } from "./fond";
 import { Fichier } from "./fichier";
@@ -41,7 +44,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
   const peutEcrire = profil.role === "admin" || profil.role === "finance";
 
   const charger = useCallback(async () => {
-    const [cl, fa, pa, de, em, co, pr, le, pf, tx] = await Promise.all([
+    const [cl, fa, pa, de, em, co, pr, le, hi, pf, tx] = await Promise.all([
       supabase.from("clients").select("*").order("denomination"),
       supabase.from("factures").select("*").order("date", { ascending: false }),
       supabase.from("paiements").select("*"),
@@ -50,6 +53,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
       supabase.from("contrats").select("*").order("date_debut", { ascending: false }),
       supabase.from("projets").select("*").order("nom"),
       supabase.from("lettres").select("*").order("date_lettre", { ascending: false }),
+      supabase.from("facture_historique").select("*").order("at", { ascending: false }).limit(500),
       supabase.from("profiles").select("*").order("full_name"),
       supabase.from("parametres").select("valeur").eq("cle", "taux_usd_cdf").single(),
     ]);
@@ -73,7 +77,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
     setD({
       clients: cl.data ?? [], factures: fa.data ?? [], paiements: pa.data ?? [],
       depenses: de.data ?? [], employes: em.data ?? [], contrats: co.data ?? [],
-      projets: pr.data ?? [], lettres: le.data ?? [],
+      projets: pr.data ?? [], lettres: le.data ?? [], historique: hi.data ?? [],
       profiles: pf.data ?? [], taux: Number(tx.data?.valeur ?? 2900),
     });
   }, [supabase]);
@@ -102,12 +106,12 @@ export default function Gestion({ profil }: { profil: Profile }) {
 
   const nav = [
     { id: "synthese", label: "Synthèse", icon: PieChart },
+    { id: "lettres", label: "Lettres", icon: Mail },
     { id: "registre", label: "Registre", icon: LayoutDashboard },
     { id: "factures", label: "Factures", icon: FileText },
     { id: "clients", label: "Clients", icon: Users },
     { id: "depenses", label: "Dépenses", icon: Wallet },
     { id: "contrats", label: "Contrats", icon: ScrollText },
-    { id: "lettres", label: "Lettres", icon: Mail },
     { id: "equipe", label: "Équipe", icon: UserCog },
     { id: "projets", label: "Projets", icon: Boxes },
     { id: "parametres", label: "Paramètres", icon: Settings },
@@ -324,10 +328,13 @@ function Registre({ d, aller }: P & { aller: (v: string) => void }) {
 
 /* =================================================================== FACTURES */
 
-function Factures({ d, peutEcrire, ecrire, supabase }: P) {
+function Factures({ d, peutEcrire, ecrire, supabase, charger }: P) {
   const [edit, setEdit] = useState<Facture | null>(null);
   const [payer, setPayer] = useState<Facture | null>(null);
+  const [imprimer, setImprimer] = useState<Facture | null>(null);
+  const [histo, setHisto] = useState<Facture | null>(null);
   const [q, setQ] = useState("");
+  const [filtre, setFiltre] = useState<"tous" | EtatCode>("tous");
 
   const paiementsDe = (id: string) => d.paiements.filter((p) => p.facture_id === id);
   const nomClient = (id: string) => d.clients.find((c) => c.id === id)?.denomination ?? "—";
@@ -341,7 +348,8 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
   const vide = (): Facture => ({
     id: "", numero: numero(), client_id: d.clients[0]?.id ?? "", objet: "",
     date: today(), echeance: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-    devise: "USD", taux: d.taux, lignes: [{ designation: "", qte: 1, pu: 0 }], statut: "brouillon",
+    devise: "USD", taux: d.taux, lignes: [{ designation: "", qte: 1, pu: 0 }],
+    statut: "brouillon", annulee_motif: null,
   });
 
   const enregistrer = async (f: Facture) => {
@@ -352,18 +360,46 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
     if (ok) setEdit(null);
   };
 
-  const liste = d.factures.filter(
-    (f) => !q || f.numero.toLowerCase().includes(q.toLowerCase())
-      || nomClient(f.client_id).toLowerCase().includes(q.toLowerCase()),
-  );
+  const annuler = async (f: Facture) => {
+    const motif = prompt(`Annuler la facture ${f.numero} ?\n\nMotif (il restera dans l'historique) :`);
+    if (!motif?.trim()) return;
+    await ecrire(supabase.from("factures").update({ statut: "annulee", annulee_motif: motif }).eq("id", f.id));
+  };
+
+  // Les quatre états demandés. Deux viennent de la base, deux du calcul —
+  // l'utilisateur, lui, n'a pas à connaître la différence.
+  const ETATS: { v: "tous" | EtatCode; l: string }[] = [
+    { v: "tous", l: "Toutes" },
+    { v: "brouillon", l: "Brouillons" },
+    { v: "emise", l: "Émises" },
+    { v: "en_souffrance", l: "En souffrance" },
+    { v: "paye", l: "Payées" },
+    { v: "annulee", l: "Annulées" },
+  ];
+
+  const compte = (v: "tous" | EtatCode) =>
+    v === "tous" ? d.factures.length
+      : d.factures.filter((f) => etatFacture(f, paiementsDe(f.id)).code === v).length;
+
+  const liste = d.factures.filter((f) => {
+    const e = etatFacture(f, paiementsDe(f.id));
+    if (filtre !== "tous" && e.code !== filtre) return false;
+    if (!q) return true;
+    const t = q.toLowerCase();
+    return f.numero.toLowerCase().includes(t)
+      || nomClient(f.client_id).toLowerCase().includes(t)
+      || (f.objet ?? "").toLowerCase().includes(t)
+      || f.lignes.some((l) => l.designation.toLowerCase().includes(t));
+  });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Titre action={
         <div className="flex gap-2">
           <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-ciel-300" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher" className={`${inputCls} pl-9`} />
+            <Search size={15} className="pointer-events-none absolute left-3 top-3 text-ciel-300" />
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Numéro, client, libellé…" className={`${inputCls} pl-9`} />
           </div>
           {peutEcrire && d.clients.length > 0 && (
             <Btn variant="primary" onClick={() => setEdit(vide())}><Plus size={15} /> Nouvelle facture</Btn>
@@ -371,16 +407,36 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
         </div>
       }>Factures</Titre>
 
+      {/* Filtres par état. Chaque onglet porte son compte : on sait ce qu'on
+          va trouver avant de cliquer. */}
+      <div className="flex flex-wrap gap-1.5">
+        {ETATS.map((e) => {
+          const n = compte(e.v);
+          const actif = filtre === e.v;
+          return (
+            <button
+              key={e.v} onClick={() => setFiltre(e.v)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                actif ? "bg-navy-900 text-white" : "bg-white text-acier ring-1 ring-ciel-100 hover:bg-ciel-50"
+              } ${n === 0 && !actif ? "opacity-40" : ""}`}
+            >
+              {e.l}
+              <span className={actif ? "text-ciel-300" : "text-ciel-300"}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {d.clients.length === 0 ? (
         <Empty icon={Users} titre="Ajoutez d'abord un client : une facture a besoin d'un destinataire." />
       ) : liste.length === 0 ? (
-        <Empty icon={FileText} titre="Aucune facture." />
+        <Empty icon={FileText} titre={q || filtre !== "tous" ? "Aucune facture ne correspond." : "Aucune facture."} />
       ) : (
         <div className="overflow-x-auto rounded-xl bg-white shadow-carte ring-1 ring-ciel-100">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[820px] text-sm">
             <thead className="border-b border-ciel-100 text-left text-xs uppercase tracking-wide text-acier">
               <tr>
-                {["Numéro", "Client", "Échéance"].map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}
+                {["Numéro", "Client", "Objet", "Échéance"].map((h) => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}
                 <th className="px-4 py-3 text-right font-medium">Montant</th>
                 <th className="px-4 py-3 text-right font-medium">Reste</th>
                 <th className="px-4 py-3 font-medium">État</th>
@@ -392,30 +448,45 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
                 const pmts = paiementsDe(f.id);
                 const e = etatFacture(f, pmts);
                 return (
-                  <tr key={f.id} className="hover:bg-ciel-50">
+                  <tr key={f.id} className={`hover:bg-ciel-50 ${f.statut === "annulee" ? "opacity-50" : ""}`}>
                     <td className="px-4 py-3 font-mono text-xs">{f.numero}</td>
                     <td className="px-4 py-3">{nomClient(f.client_id)}</td>
+                    <td className="max-w-[180px] truncate px-4 py-3 text-xs text-acier">{f.objet}</td>
                     <td className="px-4 py-3 font-mono text-xs text-acier">{dateFr(f.echeance)}</td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums">
                       {fmt(totalFacture(f), f.devise)} <span className="text-xs text-acier">{f.devise}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Money cdf={Math.max(0, resteCdf(f, pmts))} size="sm" tone={e.tone === "late" ? "text-red-600" : ""} />
+                      <Money cdf={Math.max(0, resteCdf(f, pmts))} size="sm"
+                        tone={e.code === "en_souffrance" ? "text-red-600" : ""} />
                     </td>
                     <td className="px-4 py-3"><Tag tone={e.tone}>{e.label}</Tag></td>
                     <td className="px-4 py-3">
-                      {peutEcrire && (
-                        <div className="flex justify-end gap-1">
-                          {f.statut === "emise" && resteCdf(f, pmts) > 1 && (
-                            <button onClick={() => setPayer(f)} title="Enregistrer un encaissement"
-                              className="rounded p-1.5 text-emerald-600 hover:bg-emerald-50"><Check size={15} /></button>
-                          )}
-                          <button onClick={() => setEdit(f)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={15} /></button>
+                      <div className="flex justify-end gap-0.5">
+                        <button onClick={() => setImprimer(f)} title="Imprimer ou enregistrer en PDF"
+                          className="rounded p-1.5 text-acier hover:bg-ciel-100"><Printer size={15} /></button>
+                        <button onClick={() => setHisto(f)} title="Historique"
+                          className="rounded p-1.5 text-acier hover:bg-ciel-100"><History size={15} /></button>
+                        {peutEcrire && f.statut !== "annulee" && (
+                          <>
+                            {e.code !== "paye" && f.statut === "emise" && (
+                              <button onClick={() => setPayer(f)} title="Enregistrer un encaissement"
+                                className="rounded p-1.5 text-emerald-600 hover:bg-emerald-50"><Check size={15} /></button>
+                            )}
+                            <button onClick={() => setEdit(f)} title="Modifier"
+                              className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={15} /></button>
+                            <button onClick={() => annuler(f)} title="Annuler"
+                              className="rounded p-1.5 text-amber-600 hover:bg-amber-50"><Ban size={15} /></button>
+                          </>
+                        )}
+                        {peutEcrire && f.statut === "brouillon" && (
                           <button
-                            onClick={() => confirm(`Supprimer ${f.numero} ?`) && ecrire(supabase.from("factures").delete().eq("id", f.id))}
+                            onClick={() => confirm(`Supprimer définitivement ${f.numero} ?`)
+                              && ecrire(supabase.from("factures").delete().eq("id", f.id))}
+                            title="Supprimer (brouillon uniquement)"
                             className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -425,7 +496,12 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
         </div>
       )}
 
+      <p className="text-xs text-ciel-300">
+        Une facture émise ne se supprime plus : elle s'annule, avec un motif, et la trace reste.
+      </p>
+
       {edit && <FormFacture f={edit} clients={d.clients} onSave={enregistrer} onClose={() => setEdit(null)} />}
+
       {payer && (
         <FormPaiement
           f={payer} taux={d.taux} reste={Math.max(0, resteCdf(payer, paiementsDe(payer.id)))}
@@ -435,9 +511,129 @@ function Factures({ d, peutEcrire, ecrire, supabase }: P) {
           }}
         />
       )}
+
+      {imprimer && (
+        <VueImpression
+          f={imprimer} client={d.clients.find((c) => c.id === imprimer.client_id)}
+          paiements={paiementsDe(imprimer.id)} onClose={() => setImprimer(null)}
+        />
+      )}
+
+      {histo && (
+        <VueHistorique
+          f={histo} lignes={d.historique.filter((h) => h.facture_id === histo.id)}
+          onClose={() => setHisto(null)} charger={charger}
+        />
+      )}
     </div>
   );
 }
+
+/* ------------------------------------------------------------- impression */
+
+function VueImpression({
+  f, client, paiements, onClose,
+}: { f: Facture; client: Client | undefined; paiements: Paiement[]; onClose: () => void }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+
+  return (
+    <div className="a-imprimer fixed inset-0 z-50 overflow-y-auto bg-navy-950/50 p-4 backdrop-blur-sm sm:p-8">
+      <div className="rien-a-imprimer mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3">
+        <p className="text-sm font-medium text-white">Facture {f.numero}</p>
+        <div className="flex gap-2">
+          <Btn onClick={onClose}>Fermer</Btn>
+          <Btn variant="primary" onClick={() => window.print()}>
+            <Printer size={15} /> Imprimer / Enregistrer en PDF
+          </Btn>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-[210mm] rounded-xl bg-white shadow-2xl">
+        <FacturePapier f={f} client={client} paiements={paiements} />
+      </div>
+
+      <p className="rien-a-imprimer mx-auto mt-4 max-w-[210mm] text-center text-xs text-ciel-300">
+        Dans la boîte d'impression, choisissez « Enregistrer au format PDF » comme destination.
+        Décochez « En-têtes et pieds de page » pour un rendu propre.
+      </p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- historique */
+
+const LIBELLE_ACTION: Record<string, { l: string; c: string }> = {
+  creation: { l: "Créée", c: "text-acier" },
+  modification: { l: "Modifiée", c: "text-amber-600" },
+  emission: { l: "Émise", c: "text-navy-900" },
+  annulation: { l: "Annulée", c: "text-red-600" },
+  encaissement: { l: "Encaissement", c: "text-emerald-600" },
+  suppression_encaissement: { l: "Encaissement supprimé", c: "text-red-600" },
+};
+
+function VueHistorique({
+  f, lignes, onClose, charger,
+}: { f: Facture; lignes: HistoriqueFacture[]; onClose: () => void; charger: () => Promise<void> }) {
+  useEffect(() => { charger(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Modal title={`Historique · ${f.numero}`} onClose={onClose}>
+      {lignes.length === 0 ? (
+        <p className="py-8 text-center text-sm text-acier">
+          Aucune trace. Si cette facture est antérieure à la migration 003, c'est normal :
+          l'historique ne remonte pas le temps.
+        </p>
+      ) : (
+        <ol className="space-y-3">
+          {lignes.map((h) => {
+            const a = LIBELLE_ACTION[h.action] ?? { l: h.action, c: "text-acier" };
+            const champs = (h.detail as { champs?: Record<string, [unknown, unknown]> }).champs;
+            return (
+              <li key={h.id} className="flex gap-3 border-b border-ciel-100 pb-3 last:border-0">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-orchidee" />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-medium ${a.c}`}>{a.l}</p>
+                  <p className="text-xs text-acier">
+                    {h.acteur_nom ?? "—"} ·{" "}
+                    {new Date(h.at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                  </p>
+
+                  {champs && (
+                    <ul className="mt-1.5 space-y-0.5">
+                      {Object.entries(champs).map(([champ, [avant, apres]]) => (
+                        <li key={champ} className="font-mono text-xs text-acier">
+                          {champ} : <span className="text-red-500 line-through">{String(avant ?? "—")}</span>
+                          {" → "}
+                          <span className="text-emerald-600">{String(apres ?? "—")}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {h.action === "encaissement" && (
+                    <p className="mt-1 font-mono text-xs text-emerald-600">
+                      {String(h.detail.montant)} {String(h.detail.devise)} · {String(h.detail.compte)}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <p className="mt-5 rounded-lg bg-ciel-50 px-3 py-2.5 text-xs leading-relaxed text-acier">
+        Cet historique est écrit par la base, jamais par l'application. Personne ne peut modifier
+        une facture sans laisser de trace — pas même un administrateur depuis l'interface.
+      </p>
+    </Modal>
+  );
+}
+
 
 function FormFacture({
   f, clients, onSave, onClose,
@@ -483,16 +679,21 @@ function FormFacture({
         <Field label="Objet"><Input value={v.objet ?? ""} onChange={maj("objet")} placeholder="Dashboard Power BI — phase 1" /></Field>
 
         <div>
-          <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-acier">Lignes</span>
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-acier">Lignes</span>
+            <span className="text-xs text-ciel-300">Libellé · quantité · prix unitaire</span>
+          </div>
           <div className="space-y-2">
             {v.lignes.map((l, i) => (
               <div key={i} className="flex gap-2">
+                {/* champCls, pas inputCls : ce dernier impose w-full et écrasait
+                    les largeurs — le libellé se retrouvait réduit à rien. */}
                 <input value={l.designation} onChange={(e) => majLigne(i, "designation", e.target.value)}
-                  placeholder="Désignation" className={`${inputCls} flex-1`} />
+                  placeholder="Libellé de la prestation" className={`${champCls} min-w-0 flex-1`} />
                 <input type="number" value={l.qte} onChange={(e) => majLigne(i, "qte", e.target.value)}
-                  className={`${inputCls} w-20 text-right font-mono`} />
+                  title="Quantité" className={`${champCls} w-20 shrink-0 text-right font-mono`} />
                 <input type="number" value={l.pu} onChange={(e) => majLigne(i, "pu", e.target.value)}
-                  placeholder="P.U." className={`${inputCls} w-32 text-right font-mono`} />
+                  placeholder="P.U." title="Prix unitaire" className={`${champCls} w-32 shrink-0 text-right font-mono`} />
                 {v.lignes.length > 1 && (
                   <button onClick={() => setV({ ...v, lignes: v.lignes.filter((_, j) => j !== i) })}
                     className="rounded px-2 text-red-500 hover:bg-red-50"><X size={15} /></button>
@@ -573,13 +774,22 @@ function FormPaiement({
 
 /* ==================================================================== CLIENTS */
 
-function Clients({ d, ecrire, supabase }: P) {
+function Clients({ d, ecrire, supabase, ...reste }: P) {
   const [edit, setEdit] = useState<Partial<Client> | null>(null);
+  const [fiche, setFiche] = useState<Client | null>(null);
   const vide = { denomination: "", contact: "", email: "", phone: "", adresse: "", rccm: "", nif: "" };
 
-  const facture = (id: string) =>
-    d.factures.filter((f) => f.client_id === id && f.statut === "emise")
-      .reduce((s, f) => s + toCdf(totalFacture(f), f.devise, f.taux), 0);
+  const facturesDe = (id: string) => d.factures.filter((f) => f.client_id === id);
+  const contratsDe = (id: string) => d.contrats.filter((c) => c.client_id === id);
+  const pmts = (id: string) => d.paiements.filter((p) => p.facture_id === id);
+
+  const chiffres = (id: string) => {
+    const emises = facturesDe(id).filter((f) => f.statut === "emise");
+    const facture = emises.reduce((s, f) => s + toCdf(totalFacture(f), f.devise, f.taux), 0);
+    const du = emises.reduce((s, f) => s + Math.max(0, resteCdf(f, pmts(f.id))), 0);
+    const retard = emises.filter((f) => etatFacture(f, pmts(f.id)).code === "en_souffrance").length;
+    return { facture, du, retard, nb: facturesDe(id).length, contrats: contratsDe(id).filter((c) => c.statut === "actif").length };
+  };
 
   const save = async (x: Partial<Client>) => {
     const { id, ...champs } = x;
@@ -590,7 +800,7 @@ function Clients({ d, ecrire, supabase }: P) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Titre action={<Btn variant="primary" onClick={() => setEdit(vide)}><Plus size={15} /> Ajouter un client</Btn>}>
         Clients
       </Titre>
@@ -600,25 +810,46 @@ function Clients({ d, ecrire, supabase }: P) {
           action={<Btn variant="primary" onClick={() => setEdit(vide)}><Plus size={15} /> Ajouter un client</Btn>} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {d.clients.map((c) => (
-            <div key={c.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{c.denomination}</p>
-                  <p className="truncate text-xs text-acier">{c.contact || c.email || "—"}</p>
+          {d.clients.map((c) => {
+            const k = chiffres(c.id);
+            return (
+              <div key={c.id} className="flex flex-col rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{c.denomination}</p>
+                    <p className="truncate text-xs text-acier">{c.contact || c.email || "—"}</p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <button onClick={() => setEdit(c)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
+                    <button onClick={() => confirm(`Supprimer ${c.denomination} ?`) && ecrire(supabase.from("clients").delete().eq("id", c.id))}
+                      className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                <div className="flex shrink-0">
-                  <button onClick={() => setEdit(c)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
-                  <button onClick={() => confirm(`Supprimer ${c.denomination} ?`) && ecrire(supabase.from("clients").delete().eq("id", c.id))}
-                    className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
+
+                <div className="mt-3 border-t border-ciel-100 pt-3">
+                  <p className="text-xs text-acier">Facturé</p>
+                  <Money cdf={k.facture} size="sm" />
+                  {k.du > 0 && (
+                    <p className="mt-1 text-xs">
+                      <span className="text-acier">Dû : </span>
+                      <span className={k.retard ? "font-medium text-red-600" : "text-amber-600"}>{fmt(k.du)} FC</span>
+                      {k.retard > 0 && <span className="text-red-600"> · {k.retard} en souffrance</span>}
+                    </p>
+                  )}
                 </div>
+
+                {/* Le client n'est pas une fiche d'adresse : c'est un dossier.
+                    Un clic doit donner ses factures et ses contrats. */}
+                <button
+                  onClick={() => setFiche(c)}
+                  className="mt-3 flex items-center justify-between rounded-lg bg-ciel-50 px-3 py-2 text-xs font-medium text-navy-900 transition-colors hover:bg-ciel-100"
+                >
+                  <span>{k.nb} facture{k.nb > 1 ? "s" : ""} · {k.contrats} contrat{k.contrats > 1 ? "s" : ""} actif{k.contrats > 1 ? "s" : ""}</span>
+                  <ChevronRight size={14} className="text-orchidee" />
+                </button>
               </div>
-              <div className="mt-3 border-t border-ciel-100 pt-3">
-                <p className="text-xs text-acier">Facturé</p>
-                <Money cdf={facture(c.id)} size="sm" />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -631,12 +862,119 @@ function Clients({ d, ecrire, supabase }: P) {
             { k: "phone", l: "Téléphone" },
             { k: "adresse", l: "Adresse" },
             { k: "rccm", l: "RCCM" },
-            { k: "nif", l: "NIF" },
+            { k: "nif", l: "NIF", hint: "Utile : il apparaîtra sur les factures." },
           ]} />
+      )}
+
+      {fiche && (
+        <FicheClient
+          c={fiche} d={d} onClose={() => setFiche(null)}
+          factures={facturesDe(fiche.id)} contrats={contratsDe(fiche.id)}
+        />
       )}
     </div>
   );
 }
+
+/** Le dossier d'un client : ce qu'on lui a facturé, ce qu'il doit, ce qui le lie. */
+function FicheClient({
+  c, d, factures, contrats, onClose,
+}: { c: Client; d: Data; factures: Facture[]; contrats: Contrat[]; onClose: () => void }) {
+  const pmts = (id: string) => d.paiements.filter((p) => p.facture_id === id);
+
+  const total = factures.filter((f) => f.statut === "emise")
+    .reduce((s, f) => s + toCdf(totalFacture(f), f.devise, f.taux), 0);
+  const du = factures.filter((f) => f.statut === "emise")
+    .reduce((s, f) => s + Math.max(0, resteCdf(f, pmts(f.id))), 0);
+
+  return (
+    <Modal title={c.denomination} onClose={onClose} wide>
+      <div className="space-y-6">
+        <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-ciel-100 ring-1 ring-ciel-100">
+          {[
+            { l: "Facturé", v: total, t: "" },
+            { l: "Reste dû", v: du, t: du > 0 ? "text-amber-600" : "text-emerald-600" },
+            { l: "Encaissé", v: total - du, t: "text-emerald-600" },
+          ].map((x) => (
+            <div key={x.l} className="bg-white px-3 py-3">
+              <p className="text-xs uppercase tracking-wide text-acier">{x.l}</p>
+              <p className="mt-1"><Money cdf={x.v} size="sm" tone={x.t} /></p>
+            </div>
+          ))}
+        </div>
+
+        {(c.rccm || c.nif || c.adresse || c.email || c.phone) && (
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg bg-ciel-50 px-4 py-3 text-xs">
+            {[["Contact", c.contact], ["Adresse", c.adresse], ["Email", c.email],
+              ["Téléphone", c.phone], ["RCCM", c.rccm], ["N° Impôt", c.nif]]
+              .filter(([, v]) => v)
+              .map(([k, v]) => (
+                <div key={k} className="flex gap-2">
+                  <dt className="w-20 shrink-0 text-acier">{k}</dt>
+                  <dd className="min-w-0 truncate font-medium">{v}</dd>
+                </div>
+              ))}
+          </dl>
+        )}
+
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-acier">
+            Factures ({factures.length})
+          </h3>
+          {factures.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-ciel-200 py-6 text-center text-xs text-acier">
+              Aucune facture pour ce client.
+            </p>
+          ) : (
+            <ul className="divide-y divide-ciel-100 rounded-lg ring-1 ring-ciel-100">
+              {factures.map((f) => {
+                const e = etatFacture(f, pmts(f.id));
+                return (
+                  <li key={f.id} className="flex items-center gap-3 px-3 py-2.5">
+                    <span className="w-28 shrink-0 font-mono text-xs">{f.numero}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-acier">{f.objet || "—"}</span>
+                    <span className="shrink-0 font-mono text-xs tabular-nums">
+                      {fmt(totalFacture(f), f.devise)} {f.devise}
+                    </span>
+                    <Tag tone={e.tone}>{e.label}</Tag>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-acier">
+            Contrats ({contrats.length})
+          </h3>
+          {contrats.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-ciel-200 py-6 text-center text-xs text-acier">
+              Aucun contrat pour ce client.
+            </p>
+          ) : (
+            <ul className="divide-y divide-ciel-100 rounded-lg ring-1 ring-ciel-100">
+              {contrats.map((ct) => (
+                <li key={ct.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <span className="w-28 shrink-0 font-mono text-xs">{ct.reference}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-acier">{ct.objet || "—"}</span>
+                  <span className="shrink-0 text-xs text-acier">
+                    {ct.date_fin ? `→ ${dateFr(ct.date_fin)}` : "indéterminé"}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs tabular-nums">
+                    {fmt(ct.montant, ct.devise)} {ct.devise}
+                  </span>
+                  <Tag tone={ct.statut === "actif" ? "ok" : "muted"}>{ct.statut}</Tag>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
+}
+
 
 /* =================================================================== DÉPENSES */
 
@@ -723,7 +1061,14 @@ function Depenses({ d, peutEcrire, ecrire, supabase }: P) {
 
 function Contrats({ d, ecrire, supabase }: P) {
   const [edit, setEdit] = useState<Partial<Contrat> | null>(null);
+  const [q, setQ] = useState("");
+  const [statut, setStatut] = useState("tous");
+  const [client, setClient] = useState("tous");
+  const [echeance, setEcheance] = useState("toutes");
+
   const nomClient = (id: string) => d.clients.find((c) => c.id === id)?.denomination ?? "—";
+  const dans45 = new Date(Date.now() + 45 * 86400000).toISOString().slice(0, 10);
+
   const vide = () => ({
     reference: `CTR/${new Date().getFullYear()}/${String(d.contrats.length + 1).padStart(3, "0")}`,
     client_id: d.clients[0]?.id ?? "", objet: "", date_debut: today(), date_fin: "",
@@ -739,57 +1084,125 @@ function Contrats({ d, ecrire, supabase }: P) {
     if (ok) setEdit(null);
   };
 
-  const dans45 = new Date(Date.now() + 45 * 86400000).toISOString().slice(0, 10);
+  const liste = d.contrats.filter((c) => {
+    if (statut !== "tous" && c.statut !== statut) return false;
+    if (client !== "tous" && c.client_id !== client) return false;
+    if (echeance === "proche" && !(c.date_fin && c.date_fin <= dans45 && c.date_fin >= today())) return false;
+    if (echeance === "depassee" && !(c.date_fin && c.date_fin < today())) return false;
+    if (echeance === "indeterminee" && c.date_fin) return false;
+    if (q) {
+      const t = q.toLowerCase();
+      if (!c.reference.toLowerCase().includes(t)
+        && !(c.objet ?? "").toLowerCase().includes(t)
+        && !nomClient(c.client_id).toLowerCase().includes(t)) return false;
+    }
+    return true;
+  });
+
+  const valeur = liste.reduce((s, c) => s + toCdf(c.montant, c.devise, d.taux), 0);
+  const filtreActif = statut !== "tous" || client !== "tous" || echeance !== "toutes" || !!q;
 
   return (
-    <div className="space-y-6">
-      <Titre action={d.clients.length > 0 && <Btn variant="primary" onClick={() => setEdit(vide())}><Plus size={15} /> Ajouter un contrat</Btn>}>
-        Contrats
-      </Titre>
+    <div className="space-y-5">
+      <Titre action={d.clients.length > 0 && (
+        <Btn variant="primary" onClick={() => setEdit(vide())}><Plus size={15} /> Ajouter un contrat</Btn>
+      )}>Contrats</Titre>
+
+      {/* Les filtres sont dépliés, pas cachés derrière un bouton : on ne cherche
+          pas un contrat une fois par an, on le cherche quand un client appelle. */}
+      <div className="rounded-xl bg-white p-3 shadow-carte ring-1 ring-ciel-100">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 pr-1 text-xs font-semibold uppercase tracking-wider text-acier">
+            <Filter size={13} /> Filtrer
+          </span>
+
+          <div className="relative min-w-[180px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-3 text-ciel-300" />
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Référence, objet, client…" className={`${inputCls} pl-8 py-2 text-xs`} />
+          </div>
+
+          <select value={statut} onChange={(e) => setStatut(e.target.value)} className={`${champCls} w-36 py-2 text-xs`}>
+            <option value="tous">Tous les statuts</option>
+            {["actif", "suspendu", "termine", "resilie"].map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          <select value={client} onChange={(e) => setClient(e.target.value)} className={`${champCls} w-44 py-2 text-xs`}>
+            <option value="tous">Tous les clients</option>
+            {d.clients.map((c) => <option key={c.id} value={c.id}>{c.denomination}</option>)}
+          </select>
+
+          <select value={echeance} onChange={(e) => setEcheance(e.target.value)} className={`${champCls} w-44 py-2 text-xs`}>
+            <option value="toutes">Toutes les échéances</option>
+            <option value="proche">Échéance sous 45 jours</option>
+            <option value="depassee">Échéance dépassée</option>
+            <option value="indeterminee">Durée indéterminée</option>
+          </select>
+
+          {filtreActif && (
+            <button
+              onClick={() => { setQ(""); setStatut("tous"); setClient("tous"); setEcheance("toutes"); }}
+              className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-orchidee-600 hover:bg-ciel-50"
+            >
+              <X size={13} /> Réinitialiser
+            </button>
+          )}
+        </div>
+
+        {filtreActif && (
+          <p className="mt-2.5 border-t border-ciel-100 pt-2.5 text-xs text-acier">
+            {liste.length} contrat{liste.length > 1 ? "s" : ""} sur {d.contrats.length} ·
+            valeur cumulée <Money cdf={valeur} size="sm" tone="text-navy-900" />
+          </p>
+        )}
+      </div>
 
       {d.clients.length === 0 ? (
         <Empty icon={Users} titre="Ajoutez d'abord un client." />
-      ) : d.contrats.length === 0 ? (
-        <Empty icon={ScrollText} titre="Aucun contrat." />
+      ) : liste.length === 0 ? (
+        <Empty icon={ScrollText} titre={filtreActif ? "Aucun contrat ne correspond à ces filtres." : "Aucun contrat."} />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
-          {d.contrats.map((c) => (
-            <div key={c.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-mono text-xs text-acier">{c.reference}</p>
-                  <p className="mt-1 truncate font-medium">{c.objet || "Sans objet"}</p>
-                  <p className="truncate text-xs text-acier">{nomClient(c.client_id)}</p>
-                </div>
-                <div className="flex shrink-0">
-                  <button onClick={() => setEdit(c)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
-                  <button onClick={() => ecrire(supabase.from("contrats").delete().eq("id", c.id))}
-                    className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
-                </div>
-              </div>
-              <div className="mt-3 flex items-end justify-between border-t border-ciel-100 pt-3">
-                <div className="text-xs text-acier">
-                  <p>{dateFr(c.date_debut)} → {c.date_fin ? dateFr(c.date_fin) : "indéterminé"}</p>
-                  <div className="mt-1 flex gap-2">
-                    <Tag tone={c.statut === "actif" ? "ok" : "muted"}>{c.statut}</Tag>
-                    {c.statut === "actif" && c.date_fin && c.date_fin <= dans45 && <Tag tone="wait">Échéance proche</Tag>}
+          {liste.map((c) => {
+            const finit = c.date_fin && c.date_fin <= dans45;
+            return (
+              <div key={c.id} className="rounded-xl bg-white p-4 shadow-carte ring-1 ring-ciel-100 transition-shadow hover:shadow-leve">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs text-acier">{c.reference}</p>
+                    <p className="mt-1 truncate font-medium">{c.objet || "Sans objet"}</p>
+                    <p className="truncate text-xs text-acier">{nomClient(c.client_id)}</p>
+                  </div>
+                  <div className="flex shrink-0">
+                    <button onClick={() => setEdit(c)} className="rounded p-1.5 text-acier hover:bg-ciel-100"><Pencil size={14} /></button>
+                    <button onClick={() => ecrire(supabase.from("contrats").delete().eq("id", c.id))}
+                      className="rounded p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
                   </div>
                 </div>
-                <span className="font-mono text-sm tabular-nums">
-                  {fmt(c.montant, c.devise)} <span className="text-xs text-acier">{c.devise}</span>
-                </span>
-              </div>
+                <div className="mt-3 flex items-end justify-between border-t border-ciel-100 pt-3">
+                  <div className="text-xs text-acier">
+                    <p>{dateFr(c.date_debut)} → {c.date_fin ? dateFr(c.date_fin) : "indéterminé"}</p>
+                    <div className="mt-1 flex gap-2">
+                      <Tag tone={c.statut === "actif" ? "ok" : "muted"}>{c.statut}</Tag>
+                      {c.statut === "actif" && finit && <Tag tone="wait">Échéance proche</Tag>}
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm tabular-nums">
+                    {fmt(c.montant, c.devise)} <span className="text-xs text-acier">{c.devise}</span>
+                  </span>
+                </div>
 
-              <div className="mt-3">
-                <Fichier
-                  dossier="contrats" base={c.id} chemin={c.pdf_path} nom={c.pdf_nom}
-                  libelle="Joindre le contrat signé (PDF)"
-                  onChange={(v) => ecrire(
-                    supabase.from("contrats").update({ pdf_path: v.path, pdf_nom: v.nom }).eq("id", c.id))}
-                />
+                <div className="mt-3">
+                  <Fichier
+                    dossier="contrats" base={c.id} chemin={c.pdf_path} nom={c.pdf_nom}
+                    libelle="Joindre le contrat signé (PDF)"
+                    onChange={(v) => ecrire(
+                      supabase.from("contrats").update({ pdf_path: v.path, pdf_nom: v.nom }).eq("id", c.id))}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -810,6 +1223,7 @@ function Contrats({ d, ecrire, supabase }: P) {
     </div>
   );
 }
+
 
 /* ===================================================================== ÉQUIPE */
 

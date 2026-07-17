@@ -1,12 +1,14 @@
 import type { supabaseBrowser } from "@/lib/supabase-client";
 import type {
   Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet, Lettre,
+  HistoriqueFacture,
 } from "@/lib/types";
 
 /** L'état complet chargé une fois, partagé par tous les écrans. */
 export type Data = {
   clients: Client[]; factures: Facture[]; paiements: Paiement[]; depenses: Depense[];
   employes: Employe[]; contrats: Contrat[]; projets: Projet[]; lettres: Lettre[];
+  historique: HistoriqueFacture[];
   profiles: Profile[]; taux: number;
 };
 
