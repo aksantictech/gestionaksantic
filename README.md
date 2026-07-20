@@ -26,7 +26,7 @@ Elle ajoute : PDF des contrats, responsables et échéance des projets, matricul
 généré automatiquement, description de poste, module Lettres, et le bucket de
 fichiers.
 
-> Si votre base tourne déjà, ne rejouez **que** `migration-002.sql`. Elle est
+> Si votre base tourne déjà, ne rejouez **que** `migration-002.sql`, puis `migration-003.sql`, puis `migration-004.sql`, dans l'ordre. Elle est
 > additive et ne touche à aucune donnée existante.
 
 ### 3. Créer le premier administrateur
@@ -88,8 +88,18 @@ premier chargement.
 | Rôle | Peut faire |
 |---|---|
 | `admin` | Tout, y compris créer, désactiver et changer le rôle des comptes |
-| `finance` | Factures, encaissements, dépenses, salaires, taux de change |
-| `membre` | Clients, contrats, projets. Lit les montants, n'écrit pas. Ne voit pas les salaires |
+| `finance` | Tout le financier : synthèse, budget, factures, encaissements, dépenses, salaires, taux |
+| `membre` | **Activité commerciale seule** : clients, contrats, projets, lettres. Aucun accès au financier, aux salaires, ni aux paramètres. |
+
+Depuis `migration-004`, le cloisonnement du membre est appliqué **dans PostgreSQL** (RLS) et pas seulement dans l'interface : un membre qui interrogerait l'API directement recevrait zéro ligne sur les factures, paiements et dépenses.
+
+## Budget prévisionnel
+
+Le module Budget reprend la logique de votre classeur Excel : des hypothèses (CA de départ, croissance, salaires, charges, taux d'impôt) déroulent une projection sur 12 mois et 3 ans. Rien n'est figé — tout se recalcule depuis les hypothèses.
+
+L'onglet **Prévu vs réel** est le cœur : il place la projection en regard de vos factures et dépenses réelles, mois par mois, avec l'écart en pourcentage. C'est ce qu'aucun tableur ne peut faire, puisque le tableur ne connaît pas vos factures.
+
+> ⚠️ Repris fidèlement du classeur : l'IPR (impôt sur salaires, 15 %) est **désactivé par défaut**, car le fichier d'origine ne l'appliquait pas à la masse salariale. Votre masse réelle sera donc plus lourde que ce prévisionnel. Cochez « Appliquer l'IPR » dans les hypothèses pour un plan plus prudent.
 
 Ces règles vivent dans PostgreSQL (Row Level Security), pas dans l'interface.
 Masquer un bouton n'a jamais protégé une donnée : ici, un `membre` qui appellerait

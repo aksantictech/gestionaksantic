@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, FileText, Wallet, UserCog, ScrollText, Boxes,
   Settings, ShieldCheck, Plus, Search, X, Trash2, Pencil, Check, LogOut,
   ArrowDownRight, ArrowUpRight, AlertTriangle, Building2, Mail, PieChart, ExternalLink,
-  Printer, History, Ban, Filter, ChevronRight,
+  Printer, History, Ban, Filter, ChevronRight, Target,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-client";
 import {
