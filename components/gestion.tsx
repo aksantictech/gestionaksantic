@@ -38,13 +38,20 @@ export default function Gestion({ profil }: { profil: Profile }) {
   const supabase = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
   const [d, setD] = useState<Data | null>(null);
-  const [vue, setVue] = useState("synthese");
+  // Un membre n'a pas accès à Synthèse : sa page d'accueil est l'activité.
+  const [vue, setVue] = useState(
+    profil.role === "admin" || profil.role === "finance" ? "synthese" : "clients",
+  );
   const [err, setErr] = useState("");
 
   const peutEcrire = profil.role === "admin" || profil.role === "finance";
+  // Le même prédicat que can_see_money() côté base : un membre ne voit RIEN de
+  // financier. C'est la RLS qui protège vraiment ; ceci ne fait que cacher ce
+  // qu'il ne pourrait de toute façon pas charger.
+  const peutVoirArgent = peutEcrire;
 
   const charger = useCallback(async () => {
-    const [cl, fa, pa, de, em, co, pr, le, hi, pf, tx] = await Promise.all([
+    const [cl, fa, pa, de, em, co, pr, le, hi, bu, pf, tx] = await Promise.all([
       supabase.from("clients").select("*").order("denomination"),
       supabase.from("factures").select("*").order("date", { ascending: false }),
       supabase.from("paiements").select("*"),
@@ -54,6 +61,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
       supabase.from("projets").select("*").order("nom"),
       supabase.from("lettres").select("*").order("date_lettre", { ascending: false }),
       supabase.from("facture_historique").select("*").order("at", { ascending: false }).limit(500),
+      supabase.from("budgets").select("*").order("annee", { ascending: false }),
       supabase.from("profiles").select("*").order("full_name"),
       supabase.from("parametres").select("valeur").eq("cle", "taux_usd_cdf").single(),
     ]);
@@ -78,7 +86,7 @@ export default function Gestion({ profil }: { profil: Profile }) {
       clients: cl.data ?? [], factures: fa.data ?? [], paiements: pa.data ?? [],
       depenses: de.data ?? [], employes: em.data ?? [], contrats: co.data ?? [],
       projets: pr.data ?? [], lettres: le.data ?? [], historique: hi.data ?? [],
-      profiles: pf.data ?? [], taux: Number(tx.data?.valeur ?? 2900),
+      profiles: pf.data ?? [], budgets: bu.data ?? [], taux: Number(tx.data?.valeur ?? 2900),
     });
   }, [supabase]);
 
@@ -104,21 +112,31 @@ export default function Gestion({ profil }: { profil: Profile }) {
     );
   }
 
-  const nav = [
+  // Deux menus. Le membre ne voit que l'activité commerciale ; jamais l'argent,
+  // jamais les paramètres. Ce filtrage est cosmétique — la vraie barrière est la
+  // RLS — mais montrer un onglet qui renverrait des données vides serait pire.
+  const menuFinancier = [
     { id: "synthese", label: "Synthèse", icon: PieChart },
-    { id: "lettres", label: "Lettres", icon: Mail },
+    { id: "budget", label: "Budget", icon: Target },
     { id: "registre", label: "Registre", icon: LayoutDashboard },
     { id: "factures", label: "Factures", icon: FileText },
-    { id: "clients", label: "Clients", icon: Users },
     { id: "depenses", label: "Dépenses", icon: Wallet },
+  ];
+  const menuCommun = [
+    { id: "lettres", label: "Lettres", icon: Mail },
+    { id: "clients", label: "Clients", icon: Users },
     { id: "contrats", label: "Contrats", icon: ScrollText },
     { id: "equipe", label: "Équipe", icon: UserCog },
     { id: "projets", label: "Projets", icon: Boxes },
-    { id: "parametres", label: "Paramètres", icon: Settings },
+  ];
+  const nav = [
+    ...(peutVoirArgent ? menuFinancier : []),
+    ...menuCommun,
+    ...(peutVoirArgent ? [{ id: "parametres", label: "Paramètres", icon: Settings }] : []),
     ...(profil.role === "admin" ? [{ id: "admin", label: "Admin", icon: ShieldCheck }] : []),
   ];
 
-  const props = { d, profil, peutEcrire, ecrire, supabase, charger };
+  const props = { d, profil, peutEcrire, peutVoirArgent, ecrire, supabase, charger };
 
   return (
     <div className="min-h-screen">
@@ -183,16 +201,17 @@ export default function Gestion({ profil }: { profil: Profile }) {
             </div>
           )}
 
-          {vue === "synthese" && <Synthese {...props} />}
-          {vue === "registre" && <Registre {...props} aller={setVue} />}
-          {vue === "factures" && <Factures {...props} />}
+          {peutVoirArgent && vue === "synthese" && <Synthese {...props} />}
+          {peutVoirArgent && vue === "budget" && <BudgetVue {...props} />}
+          {peutVoirArgent && vue === "registre" && <Registre {...props} aller={setVue} />}
+          {peutVoirArgent && vue === "factures" && <Factures {...props} />}
           {vue === "clients" && <Clients {...props} />}
-          {vue === "depenses" && <Depenses {...props} />}
+          {peutVoirArgent && vue === "depenses" && <Depenses {...props} />}
           {vue === "contrats" && <Contrats {...props} />}
           {vue === "lettres" && <Lettres {...props} />}
           {vue === "equipe" && <Equipe {...props} />}
           {vue === "projets" && <Projets {...props} />}
-          {vue === "parametres" && <Parametres {...props} />}
+          {peutVoirArgent && vue === "parametres" && <Parametres {...props} />}
           {vue === "admin" && <Admin {...props} />}
         </main>
       </div>
@@ -1227,7 +1246,7 @@ function Contrats({ d, ecrire, supabase }: P) {
 
 /* ===================================================================== ÉQUIPE */
 
-function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
+function Equipe({ d, peutEcrire, peutVoirArgent, ecrire, supabase }: P) {
   const [edit, setEdit] = useState<Partial<Employe> | null>(null);
   // Pas de matricule ici : la base le génère (séquence + défaut AT-00X).
   // Le calculer côté client, c'est se garantir un doublon le jour où deux
@@ -1287,9 +1306,14 @@ function Equipe({ d, peutEcrire, ecrire, supabase }: P) {
                   <p className="text-xs text-acier">Depuis {dateFr(e.date_embauche)}</p>
                   {!e.actif && <Tag>Inactif</Tag>}
                 </div>
-                <span className="font-mono text-sm tabular-nums">
-                  {fmt(e.salaire, e.devise)} <span className="text-xs text-acier">{e.devise}</span>
-                </span>
+                {/* Le salaire ne s'affiche qu'à qui a le droit de voir l'argent.
+                    La RLS le protège déjà en base ; on évite en plus de tenter
+                    de l'afficher. */}
+                {peutVoirArgent && (
+                  <span className="font-mono text-sm tabular-nums">
+                    {fmt(e.salaire, e.devise)} <span className="text-xs text-acier">{e.devise}</span>
+                  </span>
+                )}
               </div>
             </div>
           ))}

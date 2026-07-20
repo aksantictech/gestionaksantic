@@ -28,23 +28,57 @@ alter table factures add column if not exists annulee_motif text;
 
 -- L'état réel, calculé. Une seule définition, en base : l'application et les
 -- exports ne peuvent pas en inventer une autre.
+--
+-- Écrite en PL/pgSQL et non en SQL pur, volontairement. La version précédente
+-- faisait « sum(...) * f.taux » dans une même requête : taux n'est ni agrégé ni
+-- groupé, Postgres refuse — et il a raison. On sépare donc les étapes au lieu
+-- d'ajouter un GROUP BY qui masquerait l'intention.
 create or replace function etat_facture(p_facture uuid)
-returns text language sql stable as $$
-  with f as (select * from factures where id = p_facture),
-  t as (
-    select
-      (select coalesce(sum((l->>'qte')::numeric * (l->>'pu')::numeric), 0) * f.taux
-         from f, jsonb_array_elements(f.lignes) l) as du_cdf,
-      (select coalesce(sum(p.montant * p.taux), 0) from paiements p where p.facture_id = p_facture) as paye_cdf
-  )
-  select case
-    when (select statut from f) = 'brouillon' then 'brouillon'
-    when (select statut from f) = 'annulee'   then 'annulee'
-    when (select du_cdf - paye_cdf from t) <= 1 then 'paye'
-    when (select echeance from f) < current_date then 'en_souffrance'
-    else 'emise'
-  end;
-$$;
+returns text language plpgsql stable as $$
+declare
+  v_statut   text;
+  v_echeance date;
+  v_taux     numeric;
+  v_du_cdf   numeric;
+  v_paye_cdf numeric;
+begin
+  -- 1. La facture : son statut décidé, son échéance, son montant en CDF.
+  select f.statut,
+         f.echeance,
+         f.taux,
+         coalesce((
+           select sum((l->>'qte')::numeric * (l->>'pu')::numeric)
+           from jsonb_array_elements(f.lignes) l
+         ), 0)
+    into v_statut, v_echeance, v_taux, v_du_cdf
+  from factures f
+  where f.id = p_facture;
+
+  if not found then
+    return null;
+  end if;
+
+  -- La multiplication se fait ici, hors de toute agrégation.
+  v_du_cdf := v_du_cdf * v_taux;
+
+  -- 2. Ce qui est décidé prime : inutile de compter les encaissements
+  --    d'un brouillon ou d'une facture annulée.
+  if v_statut = 'brouillon' then return 'brouillon'; end if;
+  if v_statut = 'annulee'   then return 'annulee';   end if;
+
+  -- 3. Ce qui est constaté.
+  select coalesce(sum(p.montant * p.taux), 0)
+    into v_paye_cdf
+  from paiements p
+  where p.facture_id = p_facture;
+
+  -- Tolérance d'un franc : les arrondis de conversion ne doivent pas laisser
+  -- une facture soldée traîner éternellement en « émise ».
+  if v_du_cdf - v_paye_cdf <= 1 then return 'paye'; end if;
+  if v_echeance < current_date  then return 'en_souffrance'; end if;
+
+  return 'emise';
+end $$;
 
 -- ------------------------------------------------- 2. Historique
 --
@@ -64,6 +98,7 @@ create index if not exists idx_hist_facture on facture_historique (facture_id, a
 
 alter table facture_historique enable row level security;
 
+drop policy if exists hist_lire on facture_historique;
 create policy hist_lire on facture_historique for select to authenticated
   using (my_role() is not null);
 -- Aucune policy d'écriture : seuls les triggers (SECURITY DEFINER) écrivent.
@@ -163,7 +198,22 @@ insert into parametres (cle, valeur) values
 on conflict (cle) do nothing;
 
 -- =============================================================================
--- Vérification :
---   select numero, statut, etat_facture(id) from factures;
---   select action, acteur_nom, detail, at from facture_historique order by at desc limit 5;
+-- VÉRIFICATION — à exécuter après coup, requête par requête
+-- =============================================================================
+-- 1. La fonction existe et répond :
+--      select etat_facture(id), numero, statut from factures;
+--
+--    « statut » est ce qui est décidé, « etat_facture » ce qui est constaté.
+--    Une facture peut être statut='emise' et etat='paye' : c'est normal, et
+--    c'est tout l'intérêt.
+--
+-- 2. L'historique se remplit :
+--      select action, acteur_nom, detail, at
+--      from facture_historique order by at desc limit 10;
+--
+-- 3. L'historique refuse d'être réécrit (doit lever une exception) :
+--      update facture_historique set action = 'test' where id = 1;
+--
+-- 4. Les coordonnées sont en place :
+--      select valeur from parametres where cle = 'societe';
 -- =============================================================================

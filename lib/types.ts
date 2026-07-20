@@ -77,3 +77,5 @@ export interface Lettre {
   lettre_path: string | null; lettre_nom: string | null;
   accuse_path: string | null; accuse_nom: string | null;
 }
+
+export type { Budget, Hypotheses, ChargeFixe } from "./budget";
