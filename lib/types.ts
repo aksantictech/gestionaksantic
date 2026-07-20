@@ -78,4 +78,3 @@ export interface Lettre {
   accuse_path: string | null; accuse_nom: string | null;
 }
 
-export type { Budget, Hypotheses, ChargeFixe } from "./budget";

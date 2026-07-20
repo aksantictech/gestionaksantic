@@ -3,6 +3,7 @@ import type {
   Profile, Client, Facture, Paiement, Depense, Employe, Contrat, Projet, Lettre,
   HistoriqueFacture,
 } from "@/lib/types";
+import type { Budget } from "@/lib/budget";
 
 /** L'état complet chargé une fois, partagé par tous les écrans. */
 export type Data = {
