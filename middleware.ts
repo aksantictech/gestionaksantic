@@ -4,23 +4,30 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Rafraîchit la session et ferme la porte.
  *
- * ⚠️ LE PIÈGE, ET IL COÛTE CHER :
- * `supabase.auth.getUser()` peut rafraîchir le jeton et poser de nouveaux
- * cookies. Ces cookies atterrissent sur `response`. Si l'on retourne ensuite un
- * NextResponse.redirect() tout neuf, ils sont perdus : le navigateur n'a jamais
- * la session, le middleware ne voit jamais d'utilisateur, et l'on boucle entre
- * / et /login. En navigation douce, aucune erreur ne s'affiche — la page reste
- * simplement figée.
+ * ⚠️ RÈGLE DES COOKIES : `getUser()` peut rafraîchir le jeton et poser de
+ * nouveaux cookies sur `response`. Toute redirection doit RECOPIER ces cookies,
+ * sinon la session est perdue et l'on boucle entre / et /login.
  *
- * D'où la règle : toute redirection RECOPIE les cookies de `response`.
+ * ⚠️ ROBUSTESSE EDGE : le middleware s'exécute sur le réseau Edge. Si les
+ * variables d'environnement manquent, createServerClient reçoit undefined et
+ * lève une exception — c'est le MIDDLEWARE_INVOCATION_FAILED qui fait tomber
+ * TOUT le site. On préfère laisser passer la requête et laisser la page gérer
+ * l'authentification : mieux vaut une page qui redirige qu'un site mort.
  */
 export async function middleware(request: NextRequest) {
+  const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // Variables absentes → on ne fait pas crasher le site. La page /diagnostic
+  // dira quoi corriger, et app/page.tsx protège déjà l'accès côté serveur.
+  if (!URL || !ANON) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  try {
+    const supabase = createServerClient(URL, ANON, {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (list) => {
@@ -29,35 +36,34 @@ export async function middleware(request: NextRequest) {
           list.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         },
       },
-    },
-  );
+    });
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const path = request.nextUrl.pathname;
+    const { data: { user } } = await supabase.auth.getUser();
+    const path = request.nextUrl.pathname;
 
-  /** Redirige SANS perdre les cookies posés par le rafraîchissement. */
-  const rediriger = (vers: string) => {
-    const url = request.nextUrl.clone();
-    url.pathname = vers;
-    url.search = "";
-    const redirection = NextResponse.redirect(url);
-    response.cookies.getAll().forEach((c) => redirection.cookies.set(c));
-    return redirection;
-  };
+    const rediriger = (vers: string) => {
+      const url = request.nextUrl.clone();
+      url.pathname = vers;
+      url.search = "";
+      const redirection = NextResponse.redirect(url);
+      response.cookies.getAll().forEach((c) => redirection.cookies.set(c));
+      return redirection;
+    };
 
-  // Le diagnostic doit rester joignable sans session : c'est justement quand on
-  // n'arrive pas à se connecter qu'on en a besoin.
-  const libre = path === "/login" || path === "/diagnostic";
+    const libre = path === "/login" || path === "/diagnostic";
+    if (!user && !libre) return rediriger("/login");
+    if (user && path === "/login") return rediriger("/");
 
-  if (!user && !libre) return rediriger("/login");
-  if (user && path === "/login") return rediriger("/");
-
-  return response;
+    return response;
+  } catch (e) {
+    // Jamais faire tomber le site depuis le middleware. En cas d'échec Edge,
+    // on laisse passer : app/page.tsx revérifie la session côté serveur.
+    console.error("middleware:", e);
+    return NextResponse.next({ request });
+  }
 }
 
 export const config = {
-  // Le middleware ne tourne pas sur les fichiers statiques ni sur les routes
-  // d'API : la route admin fait sa propre vérification, plus stricte.
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)",
   ],
