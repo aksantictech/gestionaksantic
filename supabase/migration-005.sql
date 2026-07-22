@@ -106,18 +106,26 @@ create policy depense_supprimer on depenses for delete to authenticated
 
 -- ------------------------------------------------- 4. Reprise de l'existant
 
--- Les dépenses déjà là n'ont ni engage_par ni statut. On les considère validées
--- et payées (elles étaient saisies par finance), et engagées par leur créateur.
-update depenses
-set statut = 'validee',
-    statut_paiement = 'paye',
-    engage_par = created_by,
-    engage_nom = (select full_name from profiles where id = depenses.created_by)
-where statut = 'brouillon' and engage_par is null;
+-- Les dépenses déjà là n'ont ni engage_par ni justificatif. On leur attribue
+-- leur auteur et leur mode de règlement, mais on les LAISSE EN BROUILLON :
+-- les passer en « validee » déclencherait le trigger ci-dessus (pas de pièce
+-- jointe), et surtout ce serait mentir sur leur état. Elles apparaîtront comme
+-- « incomplètes », ce qu'elles sont, jusqu'à ce que vous y joigniez une pièce.
+--
+-- On désactive temporairement le trigger le temps de cet UPDATE de reprise,
+-- par prudence — même si statut reste 'brouillon', on évite tout effet de bord.
+alter table depenses disable trigger trg_justif;
 
--- ⚠️ Ces anciennes dépenses n'ont pas de justificatif. Le trigger n'exige la
--- pièce que sur INSERT/UPDATE futurs — l'historique n'est pas cassé, mais
--- pensez à joindre les pièces manquantes quand vous en avez le temps.
+update depenses
+set statut_paiement = coalesce(statut_paiement, 'paye'),
+    engage_par = coalesce(engage_par, created_by),
+    engage_nom = coalesce(engage_nom, (select full_name from profiles where id = depenses.created_by))
+where engage_par is null;
+
+alter table depenses enable trigger trg_justif;
+
+-- ⚠️ Vos anciennes dépenses restent en « brouillon » faute de justificatif.
+-- Ouvrez-les dans l'application, joignez la pièce, puis validez-les une à une.
 
 -- =============================================================================
 -- VÉRIFICATION

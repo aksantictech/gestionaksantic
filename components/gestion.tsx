@@ -260,10 +260,12 @@ function Registre({ d, aller }: P & { aller: (v: string) => void }) {
         ev.push({ date: p.date, sens: "in", titre: `Encaissement · ${f.numero}`, sous: nomClient(f.client_id),
           cdf: toCdf(p.montant, p.devise, p.taux) }));
     });
+    // Le fil montre TOUTES les dépenses, y compris celles avancées non encore
+    // remboursées (cdf = 0). Elles ont bien eu lieu : les masquer donnerait
+    // l'impression qu'on n'a rien dépensé. Seul le SOLDE ignore les dettes.
     d.depenses.forEach((x) =>
       ev.push({ date: x.date, sens: "out", titre: x.description || x.categorie, sous: `${x.categorie} · ${x.compte}`,
-        cdf: depenseSortieCdf(x) }))
-      .filter((e) => e.cdf > 0 || true); // les non-sorties restent listées mais à 0
+        cdf: depenseSortieCdf(x) }));
     d.contrats.forEach((c) =>
       ev.push({ date: c.date_debut, sens: "flat", titre: `Contrat ${c.reference}`, sous: nomClient(c.client_id), cdf: null }));
     return ev.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
